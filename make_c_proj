@@ -1,0 +1,12 @@
+#!/bin/bash
+if [ "$#" -eq 0 ]; then
+  echo "usage make_c_proj (project director)"
+else
+    mkdir $1
+    cd $1
+    wget -L https://raw.githubusercontent.com/McGIllicuddy7/Cog/main/cog.h
+    touch main.c
+    touch makefile
+    printf "#include<stdio.h>\n#include \"cog.h\"\nint main(int argc, const char *argv[]){\n    printf(\"hello world!\\\n\");\n}">main.c
+    printf "make: main.c\n	gcc main.c\n"> makefile
+fi
