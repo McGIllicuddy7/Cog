@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <wchar.h>
 #ifndef global_alloc
 #define global_alloc(amnt) malloc(amnt)
 #endif 
@@ -182,30 +183,50 @@ static void slice_cpy(void * target, void * source, size_t element_size, size_t 
 		v.arr[index] = value;\
 		v.len++;\
 	}
-enable_slice_type(char)
-typedef charSlice String;
+enable_slice_type(wchar_t)
+typedef wchar_tSlice String;
 static String new_string(Arena * arena, const char* str){
-	String out = make(char, arena);
+	String out = make(wchar_t, arena);
 	int l = strlen(str);
 	for(int i = 0; i<l; i++){
-		append(out, str[i]);
+		append(out, (wchar_t)str[i]);
 	}
 	append(out, '\0');
 	return out;
 }
-static void _strconcat(String * a, const char * b){
-	for(int i=0; i<strlen(b); i++){
-		a->arr[a->len-1] = b[i];
-		a->len++;
+static String new_string_wide(Arena * arena, const wchar_t* str){
+	String out = make(wchar_t, arena);
+	int l = wcslen(str);
+	for(int i = 0; i<l; i++){
+		append(out, (wchar_t)str[i]);
 	}
+	append(out, '\0');
+	return out;
+}
+static void _strconcat(String * a, const char* b, size_t b_size){
+	if(b_size <4){
+		resize((*a), len((*a))+strlen(b));
+		for(int i=0; i<strlen(b); i++){
+			a->arr[a->len-1] = (wchar_t)(b[i]);
+			a->len++;
+		}
+	}
+	else {
+		resize((*a), len((*a))+wcslen((const wchar_t *)b));
+		const wchar_t * v = (const wchar_t *)b;
+		for(int i=0; i<wcslen(v); i++){
+			a->arr[a->len-1] = (wchar_t)(v[i]);
+			a->len++;
+		}
+	}
+
 }
 #define str_concat(a, b)\
-	resize(a, len(a)+strlen(b));\
-	_strconcat(&a, b);
-#define strappend(a,b)\
+	_strconcat(&a,(const char *)b, sizeof(b[0]));
+
+#define str_append(a,b)\
 	resize(a, len(a)+1);\
 	a.arr[len(a)-1] = b
-
 String string_format(Arena *arena, const char * fmt, ...){
 	String s =new_string(arena, "");
 	va_list args;
@@ -217,7 +238,7 @@ String string_format(Arena *arena, const char * fmt, ...){
 				s.arr[len(s)] = fmt[i];
 				s.len++;
 			} else{
-				strappend(s, fmt[i]);
+				str_append(s, fmt[i]);
 			}
 			append(s, '\0');
 		}
@@ -226,42 +247,46 @@ String string_format(Arena *arena, const char * fmt, ...){
 				char buff[2];
 				buff[0] = (char)(va_arg(args,int));
 				buff[1] = '\0';
-				strconcat(s, buff);
+				str_concat(s, buff);
 				i++;
 			}
 			if(fmt[i+1] == 'l' && fmt[i+2] == 'u'){
 				char buff[128];
 				snprintf(buff,127, "%lu", va_arg(args,unsigned long));
-				strconcat(s,buff);
+				str_concat(s,buff);
 				i+= 2;
 			}
 			if(fmt[i+1] == 'u'){		
 				char buff[128];
 				snprintf(buff,127, "%u", va_arg(args,unsigned int));
-				strconcat(s,buff);
+				str_concat(s,buff);
 				i+= 1;
 			}
 			if(fmt[i+1] == 'l' && fmt[i+2] == 'd'){
 				char buff[128];
 				snprintf(buff,127, "%ld", va_arg(args,long));
-				strconcat(s,buff);
+				str_concat(s,buff);
+				i+= 2;
+			}
+			if(fmt[i+1] == 'l' && fmt[i+2] == 's'){
+				str_concat(s,va_arg(args, wchar_t *));
 				i+= 2;
 			}
 			else if(fmt[i+1] == 's'){
 				char * s2 =  va_arg(args,char *);
-				strconcat(s, s2);
+				str_concat(s, s2);
 				i++;
 			}
 			else if(fmt[i+1] == 'f'){
 				char buff[128];
 				snprintf(buff,127,"%f", va_arg(args,double));
-				strconcat(s,buff);
+				str_concat(s,buff);
 				i++;
 			}
 			else if(fmt[i+1] == 'd'){
 				char buff[128];
 				snprintf(buff,127,"%d", va_arg(args,int));
-				strconcat(s,buff);
+				str_concat(s,buff);
 				i++;
 			}
 			else if(fmt[i+1] == '%'){
