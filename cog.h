@@ -18,7 +18,7 @@ typedef struct{
 	void * next;
 }Arena;
 static Arena *init_arena(){
-	Arena * out = global_alloc(sizeof(Arena));
+	Arena * out = (Arena *)global_alloc(sizeof(Arena));
 	out->buffer = global_alloc(ARENA_CHUNK_SIZE);
 	out->end= out->buffer+ARENA_CHUNK_SIZE;
 	out->ptr = out->buffer;
@@ -33,7 +33,7 @@ static Arena * sized_init_arena(size_t size){
 	if (size%8 != 0){
 		size += 8-(size%8);
 	}
-	Arena * out = global_alloc(sizeof(Arena));
+	Arena * out = (Arena *)global_alloc(sizeof(Arena));
 	out->buffer = global_alloc(size);
 	out->end = out->buffer+size;
 	out->ptr = out->buffer;
@@ -44,7 +44,7 @@ static Arena * sized_init_arena(size_t size){
 static void free_arena(Arena * arena){
 	free(arena->buffer);
 	if(arena->next){
-		free_arena(arena->next);
+		free_arena((Arena*)arena->next);
 	}
 	arena->ptr = nil;
 	arena->next = nil;
@@ -64,7 +64,7 @@ static void * arena_alloc(Arena * arena, size_t amnt){
 		if(arena->next == nil){
 			arena->next = sized_init_arena(amnt);
 		}
-		return arena_alloc(arena->next,amnt);
+		return arena_alloc((Arena *)arena->next,amnt);
 	}
 	size_t size = amnt;
 	if(size%8 != 0){
@@ -72,7 +72,7 @@ static void * arena_alloc(Arena * arena, size_t amnt){
 	}
 	arena->last_allocation = arena->ptr;
 	void * out = arena->ptr;
-	arena->ptr+= size;
+	arena->ptr = (void *)((size_t)arena->ptr+size);
 	return out;
 }
 static void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requested_size){
@@ -80,22 +80,22 @@ static void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size
 		return realloc(ptr, requested_size);
 	}
 	if(ptr == arena->last_allocation){
-		if(arena->end-arena->last_allocation>=requested_size){
+		if((size_t)(arena->end)-(size_t)(arena->last_allocation)>=requested_size){
 			arena->ptr = arena->last_allocation+requested_size;
 			if((size_t)(arena->ptr) %8 != 0){
-				arena->ptr += 8-((size_t)(arena->ptr)%8);
+				arena->ptr = (void *)((size_t)arena->ptr+8-((size_t)(arena->ptr)%8));
 			}
 			return arena->last_allocation;
 		}
 	}
-	char * nptr = arena_alloc(arena, requested_size);
+	char * nptr =(char *)arena_alloc(arena, requested_size);
 	for(int i =0; i<initial_size; i++){
 		nptr[i] = ((char *)ptr)[i];
 	}
 	return nptr;
 }
 static void mem_shift(void * start, size_t size, size_t count, size_t distance){
-	char * data = start;
+	char * data = (char *)start;
 	for(int j = 0; j<size*distance; j++){
 		for (int i = count*size; i>0; i--){
 			data[i] = data[i-1];
@@ -116,11 +116,11 @@ static void slice_cpy(void * target, void * source, size_t element_size, size_t 
 	}T##Slice;
 
 #define make(T, arena)\
-	(T##Slice){.arr = arena_alloc(arena,sizeof(T)*8), .alloc_len = 8, .len = 0, .arena = arena}
+	(T##Slice){.arr = (T*)arena_alloc(arena,sizeof(T)*8), .alloc_len = 8, .len = 0, .arena = arena}
 
 #define append(v,q)\
 	if(v.len+1>v.alloc_len){\
-		v.arr = arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), v.alloc_len*2*sizeof(v.arr[0]));\
+		v.arr = (typeof(v.arr))arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), v.alloc_len*2*sizeof(v.arr[0]));\
 		v.alloc_len *= 2;\
 		v.arr[v.len] = q;\
 		v.len++;\
@@ -143,7 +143,7 @@ static void slice_cpy(void * target, void * source, size_t element_size, size_t 
 
 
 #define resize(v, q)\
-	v.arr = arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), q*sizeof(v.arr[0]));\
+	v.arr = (typeof(v.arr))arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), q*sizeof(v.arr[0]));\
 	v.alloc_len = q;\
 	if(v.alloc_len<v.len){\
 		v.len = v.alloc_len;\
