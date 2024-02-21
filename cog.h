@@ -10,6 +10,9 @@
 #ifndef ARENA_CHUNK_SIZE
 #define ARENA_CHUNK_SIZE 4096*2
 #endif
+#ifndef str_type
+#define str_type wchar_t
+#endif
 #define nil 0
 typedef struct{
 	void * buffer;
@@ -183,22 +186,22 @@ static void slice_cpy(void * target, void * source, size_t element_size, size_t 
 		v.arr[index] = value;\
 		v.len++;\
 	}
-enable_slice_type(wchar_t)
-typedef wchar_tSlice String;
+enable_slice_type(str_type)
+typedef str_typeSlice String;
 static String new_string(Arena * arena, const char* str){
-	String out = make(wchar_t, arena);
+	String out = make(str_type, arena);
 	int l = strlen(str);
 	for(int i = 0; i<l; i++){
-		append(out, (wchar_t)str[i]);
+		append(out, (str_type)str[i]);
 	}
 	append(out, '\0');
 	return out;
 }
 static String new_string_wide(Arena * arena, const wchar_t* str){
-	String out = make(wchar_t, arena);
+	String out = make(str_type, arena);
 	int l = wcslen(str);
 	for(int i = 0; i<l; i++){
-		append(out, (wchar_t)str[i]);
+		append(out, (str_type)str[i]);
 	}
 	append(out, '\0');
 	return out;
@@ -207,7 +210,7 @@ static void _strconcat(String * a, const char* b, size_t b_size){
 	if(b_size <4){
 		resize((*a), len((*a))+strlen(b));
 		for(int i=0; i<strlen(b); i++){
-			a->arr[a->len-1] = (wchar_t)(b[i]);
+			a->arr[a->len-1] = (str_type)(b[i]);
 			a->len++;
 		}
 	}
@@ -215,7 +218,7 @@ static void _strconcat(String * a, const char* b, size_t b_size){
 		resize((*a), len((*a))+wcslen((const wchar_t *)b));
 		const wchar_t * v = (const wchar_t *)b;
 		for(int i=0; i<wcslen(v); i++){
-			a->arr[a->len-1] = (wchar_t)(v[i]);
+			a->arr[a->len-1] = (str_type)(v[i]);
 			a->len++;
 		}
 	}
