@@ -186,6 +186,15 @@ static void slice_cpy(void * target, void * source, size_t element_size, size_t 
 		v.arr[index] = value;\
 		v.len++;\
 	}
+void * mem_clone(Arena * arena, void * start, size_t element_size, size_t count){
+	char * out = arena_alloc(arena, element_size*count);
+	for(int i =0; i<element_size*count; i++){
+		out[i] = ((char *)(start))[i];
+	}
+	return (void*)out;
+}
+#define clone(_arena, slice)\
+	(typeof(slice)){.arr = mem_clone(_arena,slice.arr, sizeof(slice.arr[0]), len(slice)), .len =slice.len , .alloc_len = slice.alloc_len, .arena = _arena};
 enable_slice_type(str_type)
 typedef str_typeSlice String;
 static String new_string(Arena * arena, const char* str){
