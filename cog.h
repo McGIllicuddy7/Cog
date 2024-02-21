@@ -141,12 +141,17 @@ static void slice_cpy(void * target, void * source, size_t element_size, size_t 
 #define len(v)\
 	v.len
 
-
 #define resize(v, q)\
-	v.arr = (typeof(v.arr))arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), q*sizeof(v.arr[0]));\
-	v.alloc_len = q;\
-	if(v.alloc_len<v.len){\
-		v.len = v.alloc_len;\
+	if(v.alloc_len<q){\
+		int l = v.alloc_len*2;\
+		if(l %8 != 0){\
+			l += 8-l%8;\
+		}\
+		v.arr = (typeof(v.arr))arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), l*sizeof(v.arr[0]));\
+		v.alloc_len = q;\
+	}\
+	if(q<v.len){\
+		v.len = q;\
 	}\
 
 #define concat(v,q)\
@@ -197,19 +202,22 @@ static void _strconcat(String * a, const char * b){
 #define strconcat(a, b)\
 	resize(a, len(a)+strlen(b));\
 	_strconcat(&a, b);
-	
+#define strappend(a,b)\
+	resize(a, len(a)+1);\
+	a.arr[len(a)-1] = b
+
 String StringFormat(Arena *arena, const char * fmt, ...){
-	String s;
-	make(char, arena);
+	String s = new_string(arena, "");
 	va_list args;
 	va_start(args, fmt);
 	int l = strlen(fmt);
 	for(int i = 0; i<l; i++){
 		if(fmt[i] != '%'){
-			if(s.len>1){
-				s.arr[len(s)-1] = fmt[i];
+			if(s.len<1){
+				s.arr[len(s)] = fmt[i];
+				s.len++;
 			} else{
-				append(s, fmt[i]);
+				strappend(s, fmt[i]);
 			}
 			append(s, '\0');
 		}
