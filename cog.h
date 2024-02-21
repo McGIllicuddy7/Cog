@@ -117,21 +117,21 @@ static void slice_cpy(void * target, void * source, size_t element_size, size_t 
 
 #define make(T, arena)\
 	(T##Slice){.arr = (T*)arena_alloc(arena,sizeof(T)*8), .alloc_len = 8, .len = 0, .arena = arena}
-
+#define array(T) T.arr
 #define append(v,q)\
 	if(v.len+1>v.alloc_len){\
-		v.arr = (typeof(v.arr))arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), v.alloc_len*2*sizeof(v.arr[0]));\
+		v.arr = (typeof(array(v)))arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), v.alloc_len*2*sizeof(v.arr[0]));\
 		v.alloc_len *= 2;\
-		v.arr[v.len] = q;\
+		array(v)[v.len] = q;\
 		v.len++;\
 	}\
 	else{\
-		v.arr[v.len] = q;\
+		array(v)[v.len] = q;\
 		v.len++;\
 	}
 #define unmake(v)\
 	if(v.arena == nil){\
-		free(v.arr);\
+		free(array(v));\
 		v.len = 0;\
 		v.alloc_len = 0;\
 	} else{\
@@ -154,7 +154,7 @@ static void slice_cpy(void * target, void * source, size_t element_size, size_t 
 		v.len = q;\
 	}\
 
-#define concat(v,q)\
+#define append_slice(v,q)\
 	if(sizeof(v.arr[0]) == sizeof(v.arr[0])){\
 		resize(v,len(v)+len(q));\
 		slice_cpy(&v.arr[len(v)], &q.arr[0], sizeof(v.arr[0]), len(q));\
@@ -199,15 +199,15 @@ static void _strconcat(String * a, const char * b){
 		a->len++;
 	}
 }
-#define strconcat(a, b)\
+#define str_concat(a, b)\
 	resize(a, len(a)+strlen(b));\
 	_strconcat(&a, b);
 #define strappend(a,b)\
 	resize(a, len(a)+1);\
 	a.arr[len(a)-1] = b
 
-String StringFormat(Arena *arena, const char * fmt, ...){
-	String s = new_string(arena, "");
+String string_format(Arena *arena, const char * fmt, ...){
+	String s =new_string(arena, "");
 	va_list args;
 	va_start(args, fmt);
 	int l = strlen(fmt);
