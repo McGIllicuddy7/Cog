@@ -1,4 +1,5 @@
 #pragma once
+//use #define COG_IMPLEMENTATION
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -21,96 +22,13 @@ typedef struct{
 	void * last_allocation;
 	void * next;
 }Arena;
-static Arena *init_arena(){
-	Arena * out = (Arena *)global_alloc(sizeof(Arena));
-	out->buffer = global_alloc(ARENA_CHUNK_SIZE);
-	out->end= out->buffer+ARENA_CHUNK_SIZE;
-	out->ptr = out->buffer;
-	out->last_allocation = nil;
-	out->next = nil;
-	return out;
-}
-static Arena * sized_init_arena(size_t size){
-	if(size<ARENA_CHUNK_SIZE){
-		size = ARENA_CHUNK_SIZE;
-	}
-	if (size%8 != 0){
-		size += 8-(size%8);
-	}
-	Arena * out = (Arena *)global_alloc(sizeof(Arena));
-	out->buffer = global_alloc(size);
-	out->end = out->buffer+size;
-	out->ptr = out->buffer;
-	out->last_allocation = nil;
-	out->next = nil;
-	return out;
-}
-static void free_arena(Arena * arena){
-	free(arena->buffer);
-	if(arena->next){
-		free_arena((Arena*)arena->next);
-	}
-	arena->ptr = nil;
-	arena->next = nil;
-	arena->end = nil;
-	arena->last_allocation = nil;
-	arena->buffer = nil;
-	free(arena);
-}
-static void * arena_alloc(Arena * arena, size_t amnt){
-	if(amnt<1){
-		return nil;
-	}
-	if(arena == nil){
-		return global_alloc(amnt);
-	}
-	if(arena->buffer+amnt>arena->end){
-		if(arena->next == nil){
-			arena->next = sized_init_arena(amnt);
-		}
-		return arena_alloc((Arena *)arena->next,amnt);
-	}
-	size_t size = amnt;
-	if(size%8 != 0){
-		size += (8-size%8);
-	}
-	arena->last_allocation = arena->ptr;
-	void * out = arena->ptr;
-	arena->ptr = (void *)((size_t)arena->ptr+size);
-	return out;
-}
-static void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requested_size){
-	if (arena == nil){
-		return realloc(ptr, requested_size);
-	}
-	if(ptr == arena->last_allocation){
-		if((size_t)(arena->end)-(size_t)(arena->last_allocation)>=requested_size){
-			arena->ptr = arena->last_allocation+requested_size;
-			if((size_t)(arena->ptr) %8 != 0){
-				arena->ptr = (void *)((size_t)arena->ptr+8-((size_t)(arena->ptr)%8));
-			}
-			return arena->last_allocation;
-		}
-	}
-	char * nptr =(char *)arena_alloc(arena, requested_size);
-	for(int i =0; i<initial_size; i++){
-		nptr[i] = ((char *)ptr)[i];
-	}
-	return nptr;
-}
-static void mem_shift(void * start, size_t size, size_t count, size_t distance){
-	char * data = (char *)start;
-	for(int j = 0; j<size*distance; j++){
-		for (int i = count*size; i>0; i--){
-			data[i] = data[i-1];
-		}
-	}
-}
-static void slice_cpy(void * target, void * source, size_t element_size, size_t count){
-	for(int i = 0; i<count*element_size; i++){
-		((char *)target)[i] = ((char *)source)[i];
-	}
-}
+Arena *init_arena();
+Arena * sized_init_arena(size_t size);
+void free_arena(Arena * arena);
+void * arena_alloc(Arena * arena, size_t amnt);
+void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requested_size);
+void mem_shift(void * start, size_t size, size_t count, size_t distance);
+void slice_cpy(void * target, void * source, size_t element_size, size_t count);
 #define enable_slice_type(T)\
 	typedef struct {\
 		T* arr;\
@@ -119,8 +37,8 @@ static void slice_cpy(void * target, void * source, size_t element_size, size_t 
 		Arena * arena;\
 	}T##Slice;
 
-#define make(T, arena)\
-	(T##Slice){.arr = (T*)arena_alloc(arena,sizeof(T)*8), .alloc_len = 8, .len = 0, .arena = arena}
+#define make(T, parent_arena)\
+	(T##Slice){.arr = (T*)arena_alloc(parent_arena,sizeof(T)*8), .alloc_len = 8, .len = 0, .arena = parent_arena}
 #define array(T) T.arr
 #define append(v,q)\
 	if(v.len+1>v.alloc_len){\
@@ -186,6 +104,124 @@ static void slice_cpy(void * target, void * source, size_t element_size, size_t 
 		v.arr[index] = value;\
 		v.len++;\
 	}
+
+void * mem_clone(Arena * arena, void * start, size_t element_size, size_t count);
+
+#define clone(_arena, slice)\
+	(typeof(slice)){.arr = mem_clone(_arena,slice.arr, sizeof(slice.arr[0]), len(slice)), .len =slice.len , .alloc_len = slice.alloc_len, .arena = _arena};
+
+enable_slice_type(int);
+enable_slice_type(long);
+typedef  uint32_t unsignedInt;
+typedef  uint64_t unsignedLong;
+enable_slice_type(unsignedInt);
+enable_slice_type(unsignedLong);
+enable_slice_type(float);
+enable_slice_type(double);
+enable_slice_type(str_type);
+typedef str_typeSlice String;
+String new_string(Arena * arena, const char* str);
+String new_string_wide(Arena * arena, const wchar_t* str);
+void _strconcat(String * a, const char* b, size_t b_size);
+String string_format(Arena *arena, const char * fmt, ...);
+#define str_concat(a, b)\
+	_strconcat(&a,(const char *)b, sizeof(b[0]));
+
+#define str_append(a,b)\
+	resize(a, len(a)+1);\
+	a.arr[len(a)-1] = b
+
+#ifdef COG_IMPLEMENTATION
+Arena *init_arena(){
+	Arena * out = (Arena *)global_alloc(sizeof(Arena));
+	out->buffer = global_alloc(ARENA_CHUNK_SIZE);
+	out->end= out->buffer+ARENA_CHUNK_SIZE;
+	out->ptr = out->buffer;
+	out->last_allocation = nil;
+	out->next = nil;
+	return out;
+}
+Arena * sized_init_arena(size_t size){
+	if(size<ARENA_CHUNK_SIZE){
+		size = ARENA_CHUNK_SIZE;
+	}
+	if (size%8 != 0){
+		size += 8-(size%8);
+	}
+	Arena * out = (Arena *)global_alloc(sizeof(Arena));
+	out->buffer = global_alloc(size);
+	out->end = out->buffer+size;
+	out->ptr = out->buffer;
+	out->last_allocation = nil;
+	out->next = nil;
+	return out;
+}
+void free_arena(Arena * arena){
+	free(arena->buffer);
+	if(arena->next){
+		free_arena((Arena*)arena->next);
+	}
+	arena->ptr = nil;
+	arena->next = nil;
+	arena->end = nil;
+	arena->last_allocation = nil;
+	arena->buffer = nil;
+	free(arena);
+}
+void * arena_alloc(Arena * arena, size_t amnt){
+	if(amnt<1){
+		return nil;
+	}
+	if(arena == nil){
+		return global_alloc(amnt);
+	}
+	if(arena->buffer+amnt>arena->end){
+		if(arena->next == nil){
+			arena->next = sized_init_arena(amnt);
+		}
+		return arena_alloc((Arena *)arena->next,amnt);
+	}
+	size_t size = amnt;
+	if(size%8 != 0){
+		size += (8-size%8);
+	}
+	arena->last_allocation = arena->ptr;
+	void * out = arena->ptr;
+	arena->ptr = (void *)((size_t)arena->ptr+size);
+	return out;
+}
+void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requested_size){
+	if (arena == nil){
+		return realloc(ptr, requested_size);
+	}
+	if(ptr == arena->last_allocation){
+		if((size_t)(arena->end)-(size_t)(arena->last_allocation)>=requested_size){
+			arena->ptr = arena->last_allocation+requested_size;
+			if((size_t)(arena->ptr) %8 != 0){
+				arena->ptr = (void *)((size_t)arena->ptr+8-((size_t)(arena->ptr)%8));
+			}
+			return arena->last_allocation;
+		}
+	}
+	char * nptr =(char *)arena_alloc(arena, requested_size);
+	for(int i =0; i<initial_size; i++){
+		nptr[i] = ((char *)ptr)[i];
+	}
+	return nptr;
+}
+void mem_shift(void * start, size_t size, size_t count, size_t distance){
+	char * data = (char *)start;
+	for(int j = 0; j<size*distance; j++){
+		for (int i = count*size; i>0; i--){
+			data[i] = data[i-1];
+		}
+	}
+}
+void slice_cpy(void * target, void * source, size_t element_size, size_t count){
+	for(int i = 0; i<count*element_size; i++){
+		((char *)target)[i] = ((char *)source)[i];
+	}
+}
 void * mem_clone(Arena * arena, void * start, size_t element_size, size_t count){
 	char * out = arena_alloc(arena, element_size*count);
 	for(int i =0; i<element_size*count; i++){
@@ -193,11 +229,7 @@ void * mem_clone(Arena * arena, void * start, size_t element_size, size_t count)
 	}
 	return (void*)out;
 }
-#define clone(_arena, slice)\
-	(typeof(slice)){.arr = mem_clone(_arena,slice.arr, sizeof(slice.arr[0]), len(slice)), .len =slice.len , .alloc_len = slice.alloc_len, .arena = _arena};
-enable_slice_type(str_type)
-typedef str_typeSlice String;
-static String new_string(Arena * arena, const char* str){
+String new_string(Arena * arena, const char* str){
 	String out = make(str_type, arena);
 	int l = strlen(str);
 	for(int i = 0; i<l; i++){
@@ -206,7 +238,7 @@ static String new_string(Arena * arena, const char* str){
 	append(out, '\0');
 	return out;
 }
-static String new_string_wide(Arena * arena, const wchar_t* str){
+String new_string_wide(Arena * arena, const wchar_t* str){
 	String out = make(str_type, arena);
 	int l = wcslen(str);
 	for(int i = 0; i<l; i++){
@@ -215,7 +247,7 @@ static String new_string_wide(Arena * arena, const wchar_t* str){
 	append(out, '\0');
 	return out;
 }
-static void _strconcat(String * a, const char* b, size_t b_size){
+void _strconcat(String * a, const char* b, size_t b_size){
 	if(b_size <4){
 		resize((*a), len((*a))+strlen(b));
 		for(int i=0; i<strlen(b); i++){
@@ -231,14 +263,7 @@ static void _strconcat(String * a, const char* b, size_t b_size){
 			a->len++;
 		}
 	}
-
 }
-#define str_concat(a, b)\
-	_strconcat(&a,(const char *)b, sizeof(b[0]));
-
-#define str_append(a,b)\
-	resize(a, len(a)+1);\
-	a.arr[len(a)-1] = b
 String string_format(Arena *arena, const char * fmt, ...){
 	String s =new_string(arena, "");
 	va_list args;
@@ -310,4 +335,5 @@ String string_format(Arena *arena, const char * fmt, ...){
 	va_end(args);
 	return s;
 }
+#endif
 
