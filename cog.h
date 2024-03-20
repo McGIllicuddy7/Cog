@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <wchar.h>
+/*
+	Initial Defines
+*/
 #ifndef global_alloc
 #define global_alloc(amnt) malloc(amnt)
 #endif 
@@ -15,20 +18,41 @@
 #define str_type wchar_t
 #endif
 #define nil 0
+/*
+Arena stuff
+*/
+typedef struct{
+	void * allocation;
+	void * next;
+	void * prev;
+}FreeableAllocation;
 typedef struct{
 	void * buffer;
 	void * end;
 	void * ptr;
 	void * last_allocation;
 	void * next;
+	FreeableAllocation * freeable_list;
 }Arena;
 Arena *init_arena();
 Arena * sized_init_arena(size_t size);
 void free_arena(Arena * arena);
 void * arena_alloc(Arena * arena, size_t amnt);
 void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requested_size);
+void * arena_alloc_freeable(Arena * arena, size_t amnt);
+void arena_free(Arena * arena, void * ptr);
+/*
+Memory stuff
+*/
+
 void mem_shift(void * start, size_t size, size_t count, size_t distance);
 void slice_cpy(void * target, void * source, size_t element_size, size_t count);
+
+
+/*
+Slice stuff
+*/
+
 #define enable_slice_type(T)\
 	typedef struct {\
 		T* arr;\
@@ -110,6 +134,12 @@ void * mem_clone(Arena * arena, void * start, size_t element_size, size_t count)
 #define clone(_arena, slice)\
 	(typeof(slice)){.arr = mem_clone(_arena,slice.arr, sizeof(slice.arr[0]), len(slice)), .len =slice.len , .alloc_len = slice.alloc_len, .arena = _arena};
 
+
+
+/*
+basic slices for convience
+*/
+
 enable_slice_type(int);
 enable_slice_type(long);
 typedef  uint32_t unsignedInt;
@@ -118,6 +148,12 @@ enable_slice_type(unsignedInt);
 enable_slice_type(unsignedLong);
 enable_slice_type(float);
 enable_slice_type(double);
+
+
+/*
+String stuff
+*/
+
 enable_slice_type(str_type);
 typedef str_typeSlice String;
 String new_string(Arena * arena, const char* str);
@@ -131,7 +167,66 @@ String string_format(Arena *arena, const char * fmt, ...);
 	resize(a, len(a)+1);\
 	a.arr[len(a)-1] = b
 
+/*
+Hashtable
+*/
+//maps Ts to Us
+#define enable_hash_type(T,U)\
+typedef struct{\
+	T key;\
+	U value;\
+}T##U##KeyValuePair;\
+enable_slice_type(T##U##KeyValuePair);\
+typedef struct{\
+	T##U##KeyValuePairSlice * Table;\
+	size_t TableSize;\
+	size_t (*hash_func)(T);\
+	bool (*eq_func)(T,T);\
+}T##U##HashTable;\
+inline U* T##U##find(T##U##HashTable* table, T key){\
+	size_t hashval = table->hash_func(key);\
+	size_t hash = hashval%table->TableSize;\
+	for(int i =0 ; i<table->Table[hash].len; i++){\
+		T##U##KeyValuePair p = table->Table[hash].arr[i];\
+		if(table->eq_func(p.key, key)){\
+			return &table->Table[hash].arr[i].value;\
+		}\
+	}\
+	return nil;\
+}\
+inline void T##U##insert(T##U##HashTable* table,U value){\
+\
+}\
+
+/*
+implementation
+*/
+
 #ifdef COG_IMPLEMENTATION
+
+
+/*
+Arena stuff
+*/
+bool is_arena_allocated(Arena * arena, void * ptr){
+	while(arena != nil){
+		if(ptr>=arena->buffer && ptr<=arena->end){
+			return 1;
+		}
+		arena = arena->next;
+	}
+	return 0;
+}
+FreeableAllocation * findAllocation(Arena * arena, void * ptr){
+	FreeableAllocation * current = arena->freeable_list;
+	while(current != nil){
+		if(current->allocation == ptr){
+			return current;
+		}
+		current = current->next;
+	}
+	return nil;
+}
 Arena *init_arena(){
 	Arena * out = (Arena *)global_alloc(sizeof(Arena));
 	out->buffer = global_alloc(ARENA_CHUNK_SIZE);
@@ -139,6 +234,7 @@ Arena *init_arena(){
 	out->ptr = out->buffer;
 	out->last_allocation = nil;
 	out->next = nil;
+	out->freeable_list = nil;
 	return out;
 }
 Arena * sized_init_arena(size_t size){
@@ -191,6 +287,16 @@ void * arena_alloc(Arena * arena, size_t amnt){
 	return out;
 }
 void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requested_size){
+	if(!is_arena_allocated(arena, ptr)){
+		FreeableAllocation * alc = findAllocation(arena, ptr);
+		if(!alc){
+			return arena_alloc_freeable(arena, requested_size);
+		}
+		void * ptrl = ptr;
+		ptrl = realloc(ptrl, requested_size);
+		alc->allocation = ptrl;
+		return ptrl;
+	}
 	if (arena == nil){
 		return realloc(ptr, requested_size);
 	}
@@ -209,6 +315,36 @@ void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requ
 	}
 	return nptr;
 }
+void * arena_alloc_freeable(Arena * arena, size_t amnt){
+	void * ptr = calloc(1, amnt);
+	FreeableAllocation * alc = calloc(1, sizeof(FreeableAllocation));
+	alc->allocation = ptr;
+	FreeableAllocation * tmp = arena->freeable_list;
+	alc->next = tmp;
+	alc->prev = nil;
+	arena->freeable_list = alc;
+	tmp->prev = alc;
+	return ptr;
+}
+void arena_free(Arena * arena, void * ptr){
+	if(is_arena_allocated(arena, ptr)){
+		return;
+	}
+	FreeableAllocation* allc = findAllocation(arena, ptr);
+	if(allc->prev){
+		((FreeableAllocation*)allc->prev)->next = allc->next;
+	}
+	if(allc->next){
+		((FreeableAllocation*)allc->next)->prev = allc->prev;
+	}
+	free(allc->allocation);
+	free(allc);
+}
+
+/*
+Memory Stuff
+*/
+
 void mem_shift(void * start, size_t size, size_t count, size_t distance){
 	char * data = (char *)start;
 	for(int j = 0; j<size*distance; j++){
@@ -229,6 +365,12 @@ void * mem_clone(Arena * arena, void * start, size_t element_size, size_t count)
 	}
 	return (void*)out;
 }
+
+
+/*
+String Stuff
+*/
+
 String new_string(Arena * arena, const char* str){
 	String out = make(str_type, arena);
 	int l = strlen(str);
