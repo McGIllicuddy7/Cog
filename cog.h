@@ -63,6 +63,8 @@ Slice stuff
 
 #define make(T, parent_arena)\
 	(T##Slice){.arr = (T*)arena_alloc(parent_arena,sizeof(T)*8), .alloc_len = 8, .len = 0, .arena = parent_arena}
+#define make_destroyable(T, parent_arena)\
+	(T##Slice){.arr = (T*)arena_alloc_freeable(parent_arena,sizeof(T)*8), .alloc_len = 8, .len = 0, .arena = parent_arena}
 #define array(T) T.arr
 #define append(v,q)\
 	if(v.len+1>v.alloc_len){\
@@ -75,7 +77,7 @@ Slice stuff
 		array(v)[v.len] = q;\
 		v.len++;\
 	}
-#define unmake(v)\
+#define destroy(v)\
 	if(v.arena == nil){\
 		free(array(v));\
 		v.len = 0;\
@@ -93,7 +95,7 @@ Slice stuff
 		if(l %8 != 0){\
 			l += 8-l%8;\
 		}\
-		v.arr = (typeof(v.arr))arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), l*sizeof(v.arr[0]));\
+		v.arr = arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), l*sizeof(v.arr[0]));\
 		v.alloc_len = q;\
 	}\
 	if(q<v.len){\
@@ -121,7 +123,7 @@ Slice stuff
 #define insert(v, value, index)\
 	if(index>=0 && index<len(v)){\
 		if(v.alloc_len>len(v)+1){\
-			v.arr = realloc(v.arr, v.alloc_len*2*sizeof(v.arr[0]));\
+			v.arr = arena_realloc(v.arena,v.arr, v.alloc_len*2*sizeof(v.arr[0]));\
 			v.alloc_len *= 2;\
 		}\
 		mem_shift(&v.arr[index], sizeof(v.arr[0]), len(v)-index, 1);\
@@ -171,6 +173,7 @@ String string_format(Arena *arena, const char * fmt, ...);
 Hashtable
 */
 //maps Ts to Us
+// I love you so much - Anna/toast <3
 #define enable_hash_type(T,U)\
 typedef struct{\
 	T key;\
@@ -262,6 +265,14 @@ void free_arena(Arena * arena){
 	arena->end = nil;
 	arena->last_allocation = nil;
 	arena->buffer = nil;
+	FreeableAllocation * list = arena->freeable_list;
+	while(list){
+		FreeableAllocation * next = list->next;
+		free(list->allocation);
+		FreeableAllocation * tmp = list;
+		list = next;
+		free(tmp);
+	}
 	free(arena);
 }
 void * arena_alloc(Arena * arena, size_t amnt){
@@ -323,7 +334,9 @@ void * arena_alloc_freeable(Arena * arena, size_t amnt){
 	alc->next = tmp;
 	alc->prev = nil;
 	arena->freeable_list = alc;
-	tmp->prev = alc;
+	if(tmp){
+		tmp->prev = alc;
+	}
 	return ptr;
 }
 void arena_free(Arena * arena, void * ptr){
