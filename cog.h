@@ -103,12 +103,12 @@ Slice stuff
 	}\
 
 #define append_slice(v,q)\
-	if(sizeof(v.arr[0]) == sizeof(v.arr[0])){\
+	if(sizeof(v.arr[0]) == sizeof(q.arr[0])){\
 		resize(v,len(v)+len(q));\
 		slice_cpy(&v.arr[len(v)], &q.arr[0], sizeof(v.arr[0]), len(q));\
 		len(v) += len(q);\
 	} else{\
-		printf("not equal types");\
+		printf("not equal types :(");\
 		exit(1);\
 	}
 
@@ -139,7 +139,7 @@ void * mem_clone(Arena * arena, void * start, size_t element_size, size_t count)
 
 
 /*
-basic slices for convience
+basic slices for convenience
 */
 
 enable_slice_type(int);
