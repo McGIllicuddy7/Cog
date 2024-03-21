@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <assert.h>
 #include <wchar.h>
 /*
 	Initial Defines
@@ -18,6 +19,7 @@
 #define str_type wchar_t
 #endif
 #define nil 0
+typedef unsigned char Byte;
 /*
 Arena stuff
 */
@@ -68,7 +70,7 @@ Slice stuff
 #define array(T) T.arr
 #define append(v,q)\
 	if(v.len+1>v.alloc_len){\
-		v.arr = (typeof(array(v)))arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), v.alloc_len*2*sizeof(v.arr[0]));\
+		v.arr = arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), v.alloc_len*2*sizeof(v.arr[0]));\
 		v.alloc_len *= 2;\
 		array(v)[v.len] = q;\
 		v.len++;\
@@ -83,6 +85,8 @@ Slice stuff
 		v.len = 0;\
 		v.alloc_len = 0;\
 	} else{\
+		arena_free(v.arena, v.arr);\
+		v.arr = nil;\
 		v.len = 0;\
 	}\
 
@@ -162,6 +166,8 @@ String new_string(Arena * arena, const char* str);
 String new_string_wide(Arena * arena, const wchar_t* str);
 void _strconcat(String * a, const char* b, size_t b_size);
 String string_format(Arena *arena, const char * fmt, ...);
+bool StringEquals(String a, String b);
+String RandomString(Arena * arena, int minlen, int maxlen);
 #define str_concat(a, b)\
 	_strconcat(&a,(const char *)b, sizeof(b[0]));
 
@@ -169,6 +175,15 @@ String string_format(Arena *arena, const char * fmt, ...);
 	resize(a, len(a)+1);\
 	a.arr[len(a)-1] = b
 
+/*
+HashFunctions
+*/
+size_t HashBytes(Byte * byte, size_t size);
+size_t HashInt(int in);
+size_t HashFloat(float fl);
+size_t HashLong(long lg);
+size_t HashDouble(double db);
+size_t HashString(String str);
 /*
 Hashtable
 */
@@ -185,8 +200,38 @@ typedef struct{\
 	size_t TableSize;\
 	size_t (*hash_func)(T);\
 	bool (*eq_func)(T,T);\
+	Arena * arena;\
 }T##U##HashTable;\
-inline U* T##U##find(T##U##HashTable* table, T key){\
+static T##U##HashTable T##U##HashTable_create(Arena * arena, size_t size,size_t (*hash_func)(T),bool (*eq_func)(T,T)){\
+	T##U##HashTable out = (T##U##HashTable){.Table = arena_alloc(arena, sizeof(T##U##KeyValuePairSlice)*size), .TableSize = size, .hash_func = hash_func, .eq_func = eq_func, .arena = arena};\
+	for(int i =0; i<size; i++){\
+		out.Table[i] = make(T##U##KeyValuePair,arena);\
+	}\
+	return out;\
+}\
+static void T##U##HashTable_resize(T##U##HashTable * table, size_t new_size){\
+	T##U##KeyValuePairSlice * new_table = arena_alloc(table->arena, new_size);\
+	for(int i =0; i<new_size; i++){\
+		new_table[i] = make(T##U##KeyValuePair, table->arena);\
+	}\
+	for(int i =0; i<table->TableSize; i++){\
+		for(int j = 0; j<len(table->Table[i]); j++){\
+			size_t hashval = table->hash_func(table->Table[i].arr[j].key);\
+			size_t hash = hashval%new_size;\
+			T##U##KeyValuePair pair = {.key = table->Table[i].arr[j].key, .value = table->Table[i].arr[j].value};\
+			append(new_table[hash], pair);\
+		}\
+	}\
+	T##U##KeyValuePairSlice * old = table->Table;\
+	size_t old_len = table->TableSize;\
+	table->Table = new_table;\
+	table->TableSize = new_size;\
+	for(int i =0; i<old_len; i++){\
+		destroy(old[i]);\
+	}\
+	arena_free(table->arena,old);\
+}\
+static U* T##U##HashTable_find(T##U##HashTable* table, T key){\
 	size_t hashval = table->hash_func(key);\
 	size_t hash = hashval%table->TableSize;\
 	for(int i =0 ; i<table->Table[hash].len; i++){\
@@ -197,26 +242,33 @@ inline U* T##U##find(T##U##HashTable* table, T key){\
 	}\
 	return nil;\
 }\
-inline void T##U##insert(T##U##HashTable* table,U value){\
-\
+static void T##U##HashTable_insert(T##U##HashTable* table, T key, U value){\
+	size_t hashval = table->hash_func(key);\
+	size_t hash = hashval%table->TableSize;\
+	T##U##KeyValuePair pair = (T##U##KeyValuePair){.key = key,.value = value};\
+	append(table->Table[hash], pair);\
 }\
-
+static void T##U##HashTable_destroy(T##U##HashTable * table){\
+	for(int i =0; i<table->TableSize; i++){\
+		destroy(table->Table[i]);\
+	}\
+	arena_free(table->arena, table->Table);\
+}
 /*
-implementation
+Implementation
 */
 
 #ifdef COG_IMPLEMENTATION
-
-
 /*
 Arena stuff
 */
 bool is_arena_allocated(Arena * arena, void * ptr){
-	while(arena != nil){
-		if(ptr>=arena->buffer && ptr<=arena->end){
+	Arena * tmp = arena;
+	while(tmp!= nil){
+		if(ptr>=tmp->buffer && ptr<=tmp->end){
 			return 1;
 		}
-		arena = arena->next;
+		tmp = tmp->next;
 	}
 	return 0;
 }
@@ -240,7 +292,8 @@ Arena *init_arena(){
 	out->freeable_list = nil;
 	return out;
 }
-Arena * sized_init_arena(size_t size){
+Arena * sized_init_arena(size_t sz){
+	size_t size = sz;
 	if(size<ARENA_CHUNK_SIZE){
 		size = ARENA_CHUNK_SIZE;
 	}
@@ -266,7 +319,12 @@ void free_arena(Arena * arena){
 	arena->last_allocation = nil;
 	arena->buffer = nil;
 	FreeableAllocation * list = arena->freeable_list;
+	int idxes[4096] = {0};
+	void * previous = nil;
 	while(list){
+		printf("{this: %p, previous: %p, next: %p, allocation: %p}\n", list, list->prev, list->next, list->allocation);
+		assert(previous == list->prev);
+		previous = list;
 		FreeableAllocation * next = list->next;
 		free(list->allocation);
 		FreeableAllocation * tmp = list;
@@ -298,13 +356,12 @@ void * arena_alloc(Arena * arena, size_t amnt){
 	return out;
 }
 void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requested_size){
-	if(!is_arena_allocated(arena, ptr)){
-		FreeableAllocation * alc = findAllocation(arena, ptr);
-		if(!alc){
-			return arena_alloc_freeable(arena, requested_size);
-		}
+	FreeableAllocation * alc = findAllocation(arena, ptr);
+	if(alc){
+		printf("called\n");
 		void * ptrl = ptr;
 		ptrl = realloc(ptrl, requested_size);
+		printf("%p\n", ptrl);
 		alc->allocation = ptrl;
 		return ptrl;
 	}
@@ -340,15 +397,18 @@ void * arena_alloc_freeable(Arena * arena, size_t amnt){
 	return ptr;
 }
 void arena_free(Arena * arena, void * ptr){
-	if(is_arena_allocated(arena, ptr)){
+	FreeableAllocation* allc = findAllocation(arena, ptr);
+	if(!allc){
 		return;
 	}
-	FreeableAllocation* allc = findAllocation(arena, ptr);
 	if(allc->prev){
 		((FreeableAllocation*)allc->prev)->next = allc->next;
 	}
 	if(allc->next){
 		((FreeableAllocation*)allc->next)->prev = allc->prev;
+	}
+	if(allc == arena->freeable_list){
+		arena->freeable_list = nil;
 	}
 	free(allc->allocation);
 	free(allc);
@@ -489,6 +549,72 @@ String string_format(Arena *arena, const char * fmt, ...){
 	}
 	va_end(args);
 	return s;
+}
+bool StringEquals(String a, String b){
+	if(len(a) != len(b)){
+		return 0;
+	}
+	for(int i= 0; i<len(a); i++){
+		if(a.arr[i] != b.arr[i]){
+			return 0;
+		}
+	}
+	return 1;
+}
+String RandomString(Arena * arena,int minlen, int maxlen){
+	int length = rand()%(maxlen-minlen)+minlen;
+	String out = new_string(arena, "");
+	resize(out, length+1);
+	out.len = length+1;
+	for(int i =0; i<length; i++){
+		char c = rand()%(90-65)+65;
+		if(rand()%2){
+			c += 32;
+		}
+		out.arr[i] = c;
+	}
+	out.arr[length+1] = 0;
+	return out;
+}
+/*
+Hashing
+*/
+
+size_t HashBytes(Byte * bytes, size_t size){
+	size_t out = 0;
+	const size_t pmlt = 31;
+	size_t mlt = 31;
+	for(int i =0; i<size;i++){
+		out += bytes[i]*mlt;
+		mlt*=pmlt;
+	}
+	return out;
+}
+size_t HashInt(int in){
+	int tmp = in;
+	return HashBytes((void *)&tmp, sizeof(tmp));
+}
+size_t HashFloat(float fl){
+	float tmp = fl;
+	return HashBytes((void *)&tmp, sizeof(tmp));
+}
+size_t HashLong(long lg){
+	long tmp = lg;
+	return HashBytes((void *)&tmp, sizeof(tmp));
+}
+size_t HashDouble(double db){
+	double tmp = db;
+	return HashBytes((void *)&tmp, sizeof(tmp));
+}
+size_t HashString(String str){
+	size_t out = 0;
+	const size_t pmlt = 31;
+	size_t mlt = 1;
+	for(int i =0; i<str.len;i++){
+		out += str.arr[i]*mlt;
+		mlt*=pmlt;
+	}
+	return out;
 }
 #endif
 
