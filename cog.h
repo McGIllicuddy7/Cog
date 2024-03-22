@@ -34,7 +34,7 @@ typedef struct{
 	void * ptr;
 	void * last_allocation;
 	void * next;
-	FreeableAllocation * freeable_list;
+	FreeableAllocation *freeable_list;
 }Arena;
 Arena *init_arena();
 Arena * sized_init_arena(size_t size);
@@ -98,6 +98,9 @@ Slice stuff
 		int l = v.alloc_len*2;\
 		if(l %8 != 0){\
 			l += 8-l%8;\
+		}\
+		while(l<q){\
+			l*=2;\
 		}\
 		v.arr = arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), l*sizeof(v.arr[0]));\
 		v.alloc_len = q;\
@@ -203,9 +206,12 @@ typedef struct{\
 	Arena * arena;\
 }T##U##HashTable;\
 static T##U##HashTable T##U##HashTable_create(Arena * arena, size_t size,size_t (*hash_func)(T),bool (*eq_func)(T,T)){\
-	T##U##HashTable out = (T##U##HashTable){.Table = arena_alloc(arena, sizeof(T##U##KeyValuePairSlice)*size), .TableSize = size, .hash_func = hash_func, .eq_func = eq_func, .arena = arena};\
+	T##U##HashTable out = (T##U##HashTable){.Table = arena_alloc_freeable(arena, sizeof(T##U##KeyValuePairSlice)*size), .TableSize = size, .hash_func = hash_func, .eq_func = eq_func, .arena = arena};\
 	for(int i =0; i<size; i++){\
-		out.Table[i] = make(T##U##KeyValuePair,arena);\
+		out.Table[i] = make_destroyable(T##U##KeyValuePair,arena);\
+		T##U##KeyValuePairSlice tmp = out.Table[i];\
+		resize(tmp,128);\
+		out.Table[i] = tmp;\
 	}\
 	return out;\
 }\
@@ -242,11 +248,25 @@ static U* T##U##HashTable_find(T##U##HashTable* table, T key){\
 	}\
 	return nil;\
 }\
+static T##U##KeyValuePair* T##U##HashTable_find_kv(T##U##HashTable* table, T key){\
+	size_t hashval = table->hash_func(key);\
+	size_t hash = hashval%table->TableSize;\
+	for(int i =0 ; i<table->Table[hash].len; i++){\
+		T##U##KeyValuePair p = table->Table[hash].arr[i];\
+		if(table->eq_func(p.key, key)){\
+			return &table->Table[hash].arr[i];\
+		}\
+	}\
+	return nil;\
+}\
 static void T##U##HashTable_insert(T##U##HashTable* table, T key, U value){\
 	size_t hashval = table->hash_func(key);\
 	size_t hash = hashval%table->TableSize;\
 	T##U##KeyValuePair pair = (T##U##KeyValuePair){.key = key,.value = value};\
-	append(table->Table[hash], pair);\
+	T##U##KeyValuePairSlice tmp = table->Table[hash];\
+	int tl = tmp.len;\
+	append(tmp, pair);\
+	table->Table[hash] = tmp;\
 }\
 static void T##U##HashTable_destroy(T##U##HashTable * table){\
 	for(int i =0; i<table->TableSize; i++){\
@@ -308,30 +328,30 @@ Arena * sized_init_arena(size_t sz){
 	out->next = nil;
 	return out;
 }
-void free_arena(Arena * arena){
-	free(arena->buffer);
-	if(arena->next){
-		free_arena((Arena*)arena->next);
+void free_arena(Arena * in_arena){
+	Arena * arena = in_arena;
+	while(arena){
+		free(arena->buffer);
+		arena->ptr = nil;
+		arena->next = nil;
+		arena->end = nil;
+		arena->last_allocation = nil;
+		arena->buffer = nil;
+			FreeableAllocation * list = arena->freeable_list;
+			void * previous = nil;
+			while(list){
+				assert(previous == list->prev);
+				previous = list;
+				FreeableAllocation * next = list->next;
+				free(list->allocation);
+				FreeableAllocation * tmp = list;
+				list = next;
+				free(tmp);
+			}
+		Arena * old = arena;
+		arena = old->next;
+		free(old);
 	}
-	arena->ptr = nil;
-	arena->next = nil;
-	arena->end = nil;
-	arena->last_allocation = nil;
-	arena->buffer = nil;
-	FreeableAllocation * list = arena->freeable_list;
-	int idxes[4096] = {0};
-	void * previous = nil;
-	while(list){
-		printf("{this: %p, previous: %p, next: %p, allocation: %p}\n", list, list->prev, list->next, list->allocation);
-		assert(previous == list->prev);
-		previous = list;
-		FreeableAllocation * next = list->next;
-		free(list->allocation);
-		FreeableAllocation * tmp = list;
-		list = next;
-		free(tmp);
-	}
-	free(arena);
 }
 void * arena_alloc(Arena * arena, size_t amnt){
 	if(amnt<1){
@@ -340,9 +360,13 @@ void * arena_alloc(Arena * arena, size_t amnt){
 	if(arena == nil){
 		return global_alloc(amnt);
 	}
-	if(arena->buffer+amnt>arena->end){
+	if(arena->ptr+amnt>=arena->end){
 		if(arena->next == nil){
-			arena->next = sized_init_arena(amnt);
+			if(amnt>(arena->end-arena->buffer)*2){
+				arena->next = sized_init_arena(amnt);
+			} else{
+				arena->next = sized_init_arena((arena->end-arena->buffer)*2);
+			}
 		}
 		return arena_alloc((Arena *)arena->next,amnt);
 	}
@@ -356,14 +380,15 @@ void * arena_alloc(Arena * arena, size_t amnt){
 	return out;
 }
 void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requested_size){
-	FreeableAllocation * alc = findAllocation(arena, ptr);
-	if(alc){
-		printf("called\n");
-		void * ptrl = ptr;
-		ptrl = realloc(ptrl, requested_size);
-		printf("%p\n", ptrl);
-		alc->allocation = ptrl;
-		return ptrl;
+	if(!is_arena_allocated(arena, ptr)){
+		FreeableAllocation * alc = findAllocation(arena, ptr);
+		if(alc){
+			void * ptrl = ptr;
+			ptrl = realloc(ptrl, requested_size);
+			alc->allocation = ptrl;
+			return ptrl;
+		}
+		return nil;
 	}
 	if (arena == nil){
 		return realloc(ptr, requested_size);
