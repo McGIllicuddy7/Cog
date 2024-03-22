@@ -385,6 +385,9 @@ void * arena_alloc(Arena * arena, size_t amnt){
 	return out;
 }
 void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requested_size){
+	if (arena == nil){
+		return realloc(ptr, requested_size);
+	}
 	if(!is_arena_allocated(arena, ptr)){
 		FreeableAllocation * alc = findAllocation(arena, ptr);
 		if(alc){
@@ -394,9 +397,6 @@ void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requ
 			return ptrl;
 		}
 		return nil;
-	}
-	if (arena == nil){
-		return realloc(ptr, requested_size);
 	}
 	if(ptr == arena->last_allocation){
 		if((size_t)(arena->end)-(size_t)(arena->last_allocation)>=requested_size){
@@ -427,6 +427,9 @@ void * arena_alloc_freeable(Arena * arena, size_t amnt){
 	return ptr;
 }
 void arena_free(Arena * arena, void * ptr){
+	if(arena == nil){
+		free(ptr);
+	}
 	FreeableAllocation* allc = findAllocation(arena, ptr);
 	if(!allc){
 		return;
