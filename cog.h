@@ -6,6 +6,7 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <wchar.h>
+#include <sys/time.h>
 /*
 	Initial Defines
 */
@@ -274,6 +275,10 @@ static void T##U##HashTable_destroy(T##U##HashTable * table){\
 	}\
 	arena_free(table->arena, table->Table);\
 }
+/*
+Utils
+*/
+long get_time_microseconds();
 /*
 Implementation
 */
@@ -640,6 +645,14 @@ size_t HashString(String str){
 		mlt*=pmlt;
 	}
 	return out;
+}
+/*
+Utils
+*/
+long get_time_microseconds(){
+	struct timeval tv;
+	gettimeofday(&tv,NULL);
+	return tv.tv_usec;
 }
 #endif
 
