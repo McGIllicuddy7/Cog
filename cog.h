@@ -210,7 +210,7 @@ static T##U##HashTable T##U##HashTable_create(Arena * arena, size_t size,size_t 
 	for(int i =0; i<size; i++){\
 		out.Table[i] = make_destroyable(T##U##KeyValuePair,arena);\
 		T##U##KeyValuePairSlice tmp = out.Table[i];\
-		resize(tmp,128);\
+		resize(tmp,16);\
 		out.Table[i] = tmp;\
 	}\
 	return out;\
