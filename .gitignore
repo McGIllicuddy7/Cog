@@ -1,3 +1,5 @@
 a.out
 main.c
 makefile
+.vscode
+a.out.dSYM
