@@ -279,6 +279,9 @@ static void T##U##HashTable_destroy(T##U##HashTable * table){\
 Utils
 */
 long get_time_microseconds();
+void begin_profile();
+long end_profile();
+void end_profile_print(const char * message);
 /*
 Implementation
 */
@@ -655,7 +658,25 @@ Utils
 long get_time_microseconds(){
 	struct timeval tv;
 	gettimeofday(&tv,NULL);
-	return tv.tv_usec;
+	return tv.tv_usec+tv.tv_sec*1000000;
 }
+static long profile_time = 0;
+void begin_profile(){
+	if(profile_time == 0){
+		profile_time = get_time_microseconds();
+	}
+}
+long end_profile(){
+	if(profile_time != 0){
+		long out =  get_time_microseconds()-profile_time;
+		profile_time = 0;
+		return out;
+	}
+	return -1;
+}
+void end_profile_print(const char * message){
+	printf("%s took %f seconds\n",message, ((double)end_profile())/1000000);
+}
+
 #endif
 
