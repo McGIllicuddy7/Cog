@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdarg.h>
 #include <assert.h>
 #include <wchar.h>
@@ -10,9 +11,15 @@
 /*
 	Initial Defines
 */
+void * debug_alloc(size_t count, size_t size);
+void debug_free(void * ptr);
+void debug_alloc_and_free_counts();
 #ifndef global_alloc
-#define global_alloc(amnt) malloc(amnt)
+#define global_alloc(count,sz) debug_alloc(count, sz)
 #endif 
+#ifndef global_free
+#define global_free(ptr) debug_free(ptr)
+#endif
 #ifndef ARENA_CHUNK_SIZE
 #define ARENA_CHUNK_SIZE 4096*2
 #endif
@@ -82,7 +89,7 @@ Slice stuff
 	}
 #define destroy(v)\
 	if(v.arena == nil){\
-		free(array(v));\
+		global_free(array(v));\
 		v.len = 0;\
 		v.alloc_len = 0;\
 	} else{\
@@ -287,9 +294,23 @@ Implementation
 */
 
 #ifdef COG_IMPLEMENTATION
+
 /*
 Arena stuff
 */
+static int alloc_count = 0;
+static int free_count =0;
+void * debug_alloc(size_t count, size_t size){
+	alloc_count++;
+	return calloc(count, size);
+}
+void debug_free(void * ptr){
+	free_count++;
+	free(ptr);
+}
+void debug_alloc_and_free_counts(){
+	printf("alloc count: %d, free_count: %d\n", alloc_count, free_count);
+}
 bool is_arena_allocated(Arena * arena, void * ptr){
 	Arena * tmp = arena;
 	while(tmp!= nil){
@@ -311,8 +332,8 @@ FreeableAllocation * findAllocation(Arena * arena, void * ptr){
 	return nil;
 }
 Arena *init_arena(){
-	Arena * out = (Arena *)global_alloc(sizeof(Arena));
-	out->buffer = global_alloc(ARENA_CHUNK_SIZE);
+	Arena * out = (Arena *)global_alloc(1,sizeof(Arena));
+	out->buffer = global_alloc(1,ARENA_CHUNK_SIZE);
 	out->end= out->buffer+ARENA_CHUNK_SIZE;
 	out->ptr = out->buffer;
 	out->last_allocation = nil;
@@ -328,8 +349,8 @@ Arena * sized_init_arena(size_t sz){
 	if (size%8 != 0){
 		size += 8-(size%8);
 	}
-	Arena * out = (Arena *)global_alloc(sizeof(Arena));
-	out->buffer = global_alloc(size);
+	Arena * out = (Arena *)global_alloc(1,sizeof(Arena));
+	out->buffer = global_alloc(1,size);
 	out->end = out->buffer+size;
 	out->ptr = out->buffer;
 	out->last_allocation = nil;
@@ -338,10 +359,10 @@ Arena * sized_init_arena(size_t sz){
 }
 void free_arena(Arena * in_arena){
 	Arena * arena = in_arena;
+	int i =0;
 	while(arena){
-		free(arena->buffer);
+		global_free(arena->buffer);
 		arena->ptr = nil;
-		arena->next = nil;
 		arena->end = nil;
 		arena->last_allocation = nil;
 		arena->buffer = nil;
@@ -351,14 +372,14 @@ void free_arena(Arena * in_arena){
 				assert(previous == list->prev);
 				previous = list;
 				FreeableAllocation * next = list->next;
-				free(list->allocation);
+				global_free(list->allocation);
 				FreeableAllocation * tmp = list;
 				list = next;
-				free(tmp);
+				global_free(tmp);
 			}
 		Arena * old = arena;
-		arena = old->next;
-		free(old);
+		arena = arena->next;
+		global_free(old);
 	}
 }
 void * arena_alloc(Arena * arena, size_t amnt){
@@ -366,7 +387,7 @@ void * arena_alloc(Arena * arena, size_t amnt){
 		return nil;
 	}
 	if(arena == nil){
-		return global_alloc(amnt);
+		return global_alloc(1,amnt);
 	}
 	if(arena->ptr+amnt>=arena->end){
 		if(arena->next == nil){
@@ -417,8 +438,8 @@ void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requ
 	return nptr;
 }
 void * arena_alloc_freeable(Arena * arena, size_t amnt){
-	void * ptr = calloc(1, amnt);
-	FreeableAllocation * alc = calloc(1, sizeof(FreeableAllocation));
+	void * ptr = global_alloc(1, amnt);
+	FreeableAllocation * alc = global_alloc(1, sizeof(FreeableAllocation));
 	alc->allocation = ptr;
 	FreeableAllocation * tmp = arena->freeable_list;
 	alc->next = tmp;
@@ -431,7 +452,7 @@ void * arena_alloc_freeable(Arena * arena, size_t amnt){
 }
 void arena_free(Arena * arena, void * ptr){
 	if(arena == nil){
-		free(ptr);
+		global_free(ptr);
 	}
 	FreeableAllocation* allc = findAllocation(arena, ptr);
 	if(!allc){
@@ -446,8 +467,8 @@ void arena_free(Arena * arena, void * ptr){
 	if(allc == arena->freeable_list){
 		arena->freeable_list = nil;
 	}
-	free(allc->allocation);
-	free(allc);
+	global_free(allc->allocation);
+	global_free(allc);
 }
 
 /*
