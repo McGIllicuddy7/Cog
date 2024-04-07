@@ -75,6 +75,10 @@ Slice stuff
 	(T##Slice){.arr = (T*)arena_alloc(parent_arena,sizeof(T)*8), .alloc_len = 8, .len = 0, .arena = parent_arena}
 #define make_destroyable(T, parent_arena)\
 	(T##Slice){.arr = (T*)arena_alloc_freeable(parent_arena,sizeof(T)*8), .alloc_len = 8, .len = 0, .arena = parent_arena}
+#define make_cap(T,  cap,parent_arena)\
+	(T##Slice){.arr = (T*)arena_alloc(parent_arena,sizeof(T)*cap), .alloc_len = cap, .len = 0, .arena = parent_arena}
+#define make_cap_destroyable(T, cap, parent_arena)\
+	(T##Slice){.arr = (T*)arena_alloc_freeable(parent_arena,sizeof(T)*cap), .alloc_len = 8, .len = 0, .arena = parent_arena}
 #define array(T) T.arr
 #define append(v,q)\
 	if(v.len+1>v.alloc_len){\
