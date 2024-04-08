@@ -75,10 +75,10 @@ Slice stuff
 	(T##Slice){.arr = (T*)arena_alloc(parent_arena,sizeof(T)*8), .alloc_len = 8, .len = 0, .arena = parent_arena}
 #define make_destroyable(T, parent_arena)\
 	(T##Slice){.arr = (T*)arena_alloc_freeable(parent_arena,sizeof(T)*8), .alloc_len = 8, .len = 0, .arena = parent_arena}
-#define make_cap(T,  cap,parent_arena)\
-	(T##Slice){.arr = (T*)arena_alloc(parent_arena,sizeof(T)*cap), .alloc_len = cap, .len = 0, .arena = parent_arena}
+#define make_cap(T,cap,parent_arena)\
+	(T##Slice){.arr = (T*)arena_alloc(parent_arena,sizeof(T)*(cap)), .alloc_len = cap, .len = 0, .arena = parent_arena}
 #define make_cap_destroyable(T, cap, parent_arena)\
-	(T##Slice){.arr = (T*)arena_alloc_freeable(parent_arena,sizeof(T)*cap), .alloc_len = 8, .len = 0, .arena = parent_arena}
+	(T##Slice){.arr = (T*)arena_alloc_freeable(parent_arena,sizeof(T)*(cap)), .alloc_len = cap, .len = 0, .arena = parent_arena}
 #define array(T) T.arr
 #define append(v,q)\
 	if(v.len+1>v.alloc_len){\
@@ -624,8 +624,10 @@ bool StringEquals(String a, String b){
 }
 String RandomString(Arena * arena,int minlen, int maxlen){
 	int length = rand()%(maxlen-minlen)+minlen;
-	String out = new_string(arena, "");
-	resize(out, length+1);
+	String out = make_cap(str_type, length+1, arena);
+	for(int i= 0; i<length+1; i++){
+		array(out)[i] = 0;
+	}
 	out.len = length+1;
 	for(int i =0; i<length; i++){
 		char c = rand()%(90-65)+65;
