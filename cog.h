@@ -137,11 +137,10 @@ typedef struct{\
 	Arena * arena;\
 }T##U##HashTable;\
 static T##U##HashTable T##U##HashTable_create(Arena * arena, size_t size,size_t (*hash_func)(T),bool (*eq_func)(T,T)){\
-	T##U##HashTable out = (T##U##HashTable){.Table = arena_alloc_freeable(arena, sizeof(T##U##KeyValuePairSlice)*size), .TableSize = size, .hash_func = hash_func, .eq_func = eq_func, .arena = arena};\
+	T##U##HashTable out = (T##U##HashTable){.Table = arena_alloc_freeable(arena, sizeof(T##U##KeyValuePair arr)*size), .TableSize = size, .hash_func = hash_func, .eq_func = eq_func, .arena = arena};\
 	for(int i =0; i<size; i++){\
 		out.Table[i] = make_destroyable(T##U##KeyValuePair,16,arena);\
 		resize(out.Table[i],16);\
-		out.Table[i] = tmp;\
 	}\
 	return out;\
 }\
@@ -193,7 +192,7 @@ static void T##U##HashTable_insert(T##U##HashTable* table, T key, U value){\
 	size_t hashval = table->hash_func(key);\
 	size_t hash = hashval%table->TableSize;\
 	T##U##KeyValuePair pair = (T##U##KeyValuePair){.key = key,.value = value};\
-	T##U##KeyValuePair arr tmp = &table->Table[hash];\
+	T##U##KeyValuePair arr tmp = table->Table[hash];\
 	int tl = len(tmp);\
 	append(tmp, pair);\
 	table->Table[hash] = tmp;\
@@ -398,11 +397,6 @@ void mem_shift(void * start, size_t size, size_t count, size_t distance){
 		for (int i = count*size; i>0; i--){
 			data[i] = data[i-1];
 		}
-	}
-}
-void slice_cpy(void * target, void * source, size_t element_size, size_t count){
-	for(int i = 0; i<count*element_size; i++){
-		((char *)target)[i] = ((char *)source)[i];
 	}
 }
 void * mem_clone(Arena * arena, void * start, size_t element_size, size_t count){
@@ -683,6 +677,9 @@ String string_format(Arena *arena, const char * fmt, ...){
 	return s;
 }
 bool StringEquals(String a, String b){
+	if(a == 0 || b == 0){
+		return 0;
+	}
 	if(len(a) != len(b)){
 		return 0;
 	}
