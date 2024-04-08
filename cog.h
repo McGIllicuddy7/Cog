@@ -63,120 +63,40 @@ void slice_cpy(void * target, void * source, size_t element_size, size_t count);
 Slice stuff
 */
 
-#define enable_slice_type(T)\
-	typedef struct {\
-		T* arr;\
-		size_t len;\
-		size_t alloc_len;\
-		Arena * arena;\
-	}T##Slice;
+#define arr * 
+void * new_array(size_t object_size, size_t capacity, Arena * arena);
+void delete_array(void * array);
+void * array_concat(void * array, void * target, size_t object_size, size_t addr_size);
+size_t array_length(void * array);
+size_t array_capacity(void * array);
+void *array_resize(void * array, size_t new_size, size_t obj_size);
+void *array_remove(void * array, size_t idx, size_t obj_size);
+void *array_clone(void * array, Arena * arena);
+void * new_array_deletable(size_t object_size, size_t capacity, Arena * arena);
 
-#define make(T, parent_arena)\
-	(T##Slice){.arr = (T*)arena_alloc(parent_arena,sizeof(T)*8), .alloc_len = 8, .len = 0, .arena = parent_arena}
-#define make_destroyable(T, parent_arena)\
-	(T##Slice){.arr = (T*)arena_alloc_freeable(parent_arena,sizeof(T)*8), .alloc_len = 8, .len = 0, .arena = parent_arena}
-#define make_cap(T,cap,parent_arena)\
-	(T##Slice){.arr = (T*)arena_alloc(parent_arena,sizeof(T)*(cap)), .alloc_len = cap, .len = 0, .arena = parent_arena}
-#define make_cap_destroyable(T, cap, parent_arena)\
-	(T##Slice){.arr = (T*)arena_alloc_freeable(parent_arena,sizeof(T)*(cap)), .alloc_len = cap, .len = 0, .arena = parent_arena}
-#define array(T) T.arr
-#define append(v,q)\
-	if(v.len+1>v.alloc_len){\
-		v.arr = arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), v.alloc_len*2*sizeof(v.arr[0]));\
-		v.alloc_len *= 2;\
-		array(v)[v.len] = q;\
-		v.len++;\
-	}\
-	else{\
-		array(v)[v.len] = q;\
-		v.len++;\
-	}
-#define destroy(v)\
-	if(v.arena == nil){\
-		global_free(array(v));\
-		v.len = 0;\
-		v.alloc_len = 0;\
-	} else{\
-		arena_free(v.arena, v.arr);\
-		v.arr = nil;\
-		v.len = 0;\
-	}\
+#define make(T, sz, _arena) new_array(sizeof(T), sz, _arena)
+#define make_destroyable(T, sz, _arena) new_array_deletable(sizeof(T), sz, _arena)
+#define clone(array, _arena) array_clone(array, _arena)
+#define destroy(target) delete_array(target)
+#define resize(target, new_size) target = array_resize(target,new_size, sizeof(*target))
+#define append(target, addr) \
+    resize(target, len(target)+1);\
+    target[len(target)-1] = addr
 
-#define len(v)\
-	v.len
-
-#define resize(v, q)\
-	if(v.alloc_len<q){\
-		int l = v.alloc_len*2;\
-		if(l %8 != 0){\
-			l += 8-l%8;\
-		}\
-		while(l<q){\
-			l*=2;\
-		}\
-		v.arr = arena_realloc(v.arena, v.arr,v.alloc_len*sizeof(v.arr[0]), l*sizeof(v.arr[0]));\
-		v.alloc_len = q;\
-	}\
-	if(q<v.len){\
-		v.len = q;\
-	}\
-
-#define append_slice(v,q)\
-	if(sizeof(v.arr[0]) == sizeof(q.arr[0])){\
-		resize(v,len(v)+len(q));\
-		slice_cpy(&v.arr[len(v)], &q.arr[0], sizeof(v.arr[0]), len(q));\
-		len(v) += len(q);\
-	} else{\
-		printf("not equal types :(");\
-		exit(1);\
-	}
-
-
-#define remove(v, q)\
-	if(q>=0 && q<len(v)){\
-		memmove(&v.arr[q], &v.arr[q+1],&v.arr[len(v)-1]-&v.arr[q+1]);\
-		v.len--;\
-	}\
-
-
-#define insert(v, value, index)\
-	if(index>=0 && index<len(v)){\
-		if(v.alloc_len>len(v)+1){\
-			v.arr = arena_realloc(v.arena,v.arr, v.alloc_len*2*sizeof(v.arr[0]));\
-			v.alloc_len *= 2;\
-		}\
-		mem_shift(&v.arr[index], sizeof(v.arr[0]), len(v)-index, 1);\
-		v.arr[index] = value;\
-		v.len++;\
-	}
-
-void * mem_clone(Arena * arena, void * start, size_t element_size, size_t count);
-
-#define clone(_arena, slice)\
-	(typeof(slice)){.arr = mem_clone(_arena,slice.arr, sizeof(slice.arr[0]), len(slice)), .len =slice.len , .alloc_len = slice.alloc_len, .arena = _arena};
-
-
-
-/*
-basic slices for convenience
-*/
-
-enable_slice_type(int);
-enable_slice_type(long);
-typedef  uint32_t unsignedInt;
-typedef  uint64_t unsignedLong;
-enable_slice_type(unsignedInt);
-enable_slice_type(unsignedLong);
-enable_slice_type(float);
-enable_slice_type(double);
-
+#define concat(target, addr)     target =array_concat(target, addr, sizeof(*target), sizeof(*addr))
+#define remove(target, idx)  target = array_remove(target, idx, sizeof(*target))
+#define insert(target, idx,value)\
+target = resize(target, len(target)+1);\
+memmove(&target[idx+1], &target[idx], (len(target)-idx-1)*sizeof(*target));\
+target[idx] = value
+#define len(target) array_length(target)
+#define cap(target) array_capacity(target)
 
 /*
 String stuff
 */
 
-enable_slice_type(str_type);
-typedef str_typeSlice String;
+typedef str_type arr String;
 String new_string(Arena * arena, const char* str);
 String new_string_wide(Arena * arena, const wchar_t* str);
 void _strconcat(String * a, const char* b, size_t b_size);
@@ -188,7 +108,7 @@ String RandomString(Arena * arena, int minlen, int maxlen);
 
 #define str_append(a,b)\
 	resize(a, len(a)+1);\
-	a.arr[len(a)-1] = b
+	a[len(a)-1] = b
 
 /*
 HashFunctions
@@ -209,9 +129,8 @@ typedef struct{\
 	T key;\
 	U value;\
 }T##U##KeyValuePair;\
-enable_slice_type(T##U##KeyValuePair);\
 typedef struct{\
-	T##U##KeyValuePairSlice * Table;\
+	T##U##KeyValuePair arr * Table;\
 	size_t TableSize;\
 	size_t (*hash_func)(T);\
 	bool (*eq_func)(T,T);\
@@ -220,27 +139,26 @@ typedef struct{\
 static T##U##HashTable T##U##HashTable_create(Arena * arena, size_t size,size_t (*hash_func)(T),bool (*eq_func)(T,T)){\
 	T##U##HashTable out = (T##U##HashTable){.Table = arena_alloc_freeable(arena, sizeof(T##U##KeyValuePairSlice)*size), .TableSize = size, .hash_func = hash_func, .eq_func = eq_func, .arena = arena};\
 	for(int i =0; i<size; i++){\
-		out.Table[i] = make_destroyable(T##U##KeyValuePair,arena);\
-		T##U##KeyValuePairSlice tmp = out.Table[i];\
-		resize(tmp,16);\
+		out.Table[i] = make_destroyable(T##U##KeyValuePair,16,arena);\
+		resize(out.Table[i],16);\
 		out.Table[i] = tmp;\
 	}\
 	return out;\
 }\
 static void T##U##HashTable_resize(T##U##HashTable * table, size_t new_size){\
-	T##U##KeyValuePairSlice * new_table = arena_alloc(table->arena, new_size);\
+	T##U##KeyValuePair arr * new_table = arena_alloc(table->arena, new_size);\
 	for(int i =0; i<new_size; i++){\
-		new_table[i] = make(T##U##KeyValuePair, table->arena);\
+		new_table[i] = make(T##U##KeyValuePair,8, table->arena);\
 	}\
 	for(int i =0; i<table->TableSize; i++){\
 		for(int j = 0; j<len(table->Table[i]); j++){\
-			size_t hashval = table->hash_func(table->Table[i].arr[j].key);\
+			size_t hashval = table->hash_func(table->Table[i][j].key);\
 			size_t hash = hashval%new_size;\
-			T##U##KeyValuePair pair = {.key = table->Table[i].arr[j].key, .value = table->Table[i].arr[j].value};\
+			T##U##KeyValuePair pair = {.key = table->Table[i][j].key, .value = table->Table[i][j].value};\
 			append(new_table[hash], pair);\
 		}\
 	}\
-	T##U##KeyValuePairSlice * old = table->Table;\
+	T##U##KeyValuePair arr * old = table->Table;\
 	size_t old_len = table->TableSize;\
 	table->Table = new_table;\
 	table->TableSize = new_size;\
@@ -252,10 +170,10 @@ static void T##U##HashTable_resize(T##U##HashTable * table, size_t new_size){\
 static U* T##U##HashTable_find(T##U##HashTable* table, T key){\
 	size_t hashval = table->hash_func(key);\
 	size_t hash = hashval%table->TableSize;\
-	for(int i =0 ; i<table->Table[hash].len; i++){\
-		T##U##KeyValuePair p = table->Table[hash].arr[i];\
+	for(int i =0 ; i<len(table->Table[hash]); i++){\
+		T##U##KeyValuePair p = table->Table[hash][i];\
 		if(table->eq_func(p.key, key)){\
-			return &table->Table[hash].arr[i].value;\
+			return &table->Table[hash][i].value;\
 		}\
 	}\
 	return nil;\
@@ -263,10 +181,10 @@ static U* T##U##HashTable_find(T##U##HashTable* table, T key){\
 static T##U##KeyValuePair* T##U##HashTable_find_kv(T##U##HashTable* table, T key){\
 	size_t hashval = table->hash_func(key);\
 	size_t hash = hashval%table->TableSize;\
-	for(int i =0 ; i<table->Table[hash].len; i++){\
-		T##U##KeyValuePair p = table->Table[hash].arr[i];\
+	for(int i =0 ; i<len(table->Table[hash]); i++){\
+		T##U##KeyValuePair p = table->Table[hash][i];\
 		if(table->eq_func(p.key, key)){\
-			return &table->Table[hash].arr[i];\
+			return &table->Table[hash][i];\
 		}\
 	}\
 	return nil;\
@@ -275,8 +193,8 @@ static void T##U##HashTable_insert(T##U##HashTable* table, T key, U value){\
 	size_t hashval = table->hash_func(key);\
 	size_t hash = hashval%table->TableSize;\
 	T##U##KeyValuePair pair = (T##U##KeyValuePair){.key = key,.value = value};\
-	T##U##KeyValuePairSlice tmp = table->Table[hash];\
-	int tl = tmp.len;\
+	T##U##KeyValuePair arr tmp = &table->Table[hash];\
+	int tl = len(tmp);\
 	append(tmp, pair);\
 	table->Table[hash] = tmp;\
 }\
@@ -297,11 +215,7 @@ void end_profile_print(const char * message);
 Implementation
 */
 
-#ifdef COG_IMPLEMENTATION
-
-/*
-Arena stuff
-*/
+#ifdef COG_IMPLEMENTATION 
 static int alloc_count = 0;
 static int free_count =0;
 void * debug_alloc(size_t count, size_t size){
@@ -474,7 +388,6 @@ void arena_free(Arena * arena, void * ptr){
 	global_free(allc->allocation);
 	global_free(allc);
 }
-
 /*
 Memory Stuff
 */
@@ -501,13 +414,175 @@ void * mem_clone(Arena * arena, void * start, size_t element_size, size_t count)
 }
 
 
+
+/*
+Hashing
+*/
+
+size_t HashBytes(Byte * bytes, size_t size){
+	size_t out = 0;
+	const size_t pmlt = 31;
+	size_t mlt = 31;
+	for(int i =0; i<size;i++){
+		out += bytes[i]*mlt;
+		mlt*=pmlt;
+	}
+	return out;
+}
+size_t HashInt(int in){
+	int tmp = in;
+	return HashBytes((void *)&tmp, sizeof(tmp));
+}
+size_t HashFloat(float fl){
+	float tmp = fl;
+	return HashBytes((void *)&tmp, sizeof(tmp));
+}
+size_t HashLong(long lg){
+	long tmp = lg;
+	return HashBytes((void *)&tmp, sizeof(tmp));
+}
+size_t HashDouble(double db){
+	double tmp = db;
+	return HashBytes((void *)&tmp, sizeof(tmp));
+}
+size_t HashString(String str){
+	size_t out = 0;
+	const size_t pmlt = 31;
+	size_t mlt = 1;
+	for(int i =0; i<len(str);i++){
+		out += str[i]*mlt;
+		mlt*=pmlt;
+	}
+	return out;
+}
+/*
+Utils
+*/
+long get_time_microseconds(){
+	struct timeval tv;
+	gettimeofday(&tv,NULL);
+	return tv.tv_usec+tv.tv_sec*1000000;
+}
+static long profile_time = 0;
+void begin_profile(){
+	if(profile_time == 0){
+		profile_time = get_time_microseconds();
+	}
+}
+long end_profile(){
+	if(profile_time != 0){
+		long out =  get_time_microseconds()-profile_time;
+		profile_time = 0;
+		return out;
+	}
+	return -1;
+}
+void end_profile_print(const char * message){
+	printf("%s took %f seconds\n",message, ((double)end_profile())/1000000);
+}
+
+typedef struct{
+    size_t length;
+    size_t capacity;
+    Arena * arena;
+}ArrayHeader_t;
+size_t to_pow_2(size_t sz){
+    int i = 1;
+    while(i<sz){
+        i*=2;
+    }
+    return i;
+}
+ArrayHeader_t* GetHeader(void* array){
+    return array-sizeof(ArrayHeader_t);
+}
+void * new_array(size_t object_size, size_t capacity, Arena * arena){
+    size_t space = to_pow_2(capacity);
+    void * tmp = arena_alloc(arena,sizeof(ArrayHeader_t)+object_size*space);
+    ArrayHeader_t * head = tmp;
+    head->length = 0;
+    head->capacity = space;
+    head->arena = arena;
+    void * out = tmp+sizeof(ArrayHeader_t);
+    return out;
+}
+void delete_array(void * array){
+    ArrayHeader_t * head = GetHeader(array);
+    arena_free(head->arena,head);
+}
+void * array_concat(void * array, void * target, size_t object_size, size_t addr_size){
+    assert(addr_size == object_size);
+    assert(array != target);
+    ArrayHeader_t * array_head = GetHeader(array);
+    int l = array_head->length;
+    ArrayHeader_t * target_head = GetHeader(target);
+    int v = target_head->length;
+    void * out= array_resize(array, array_head->length+v,object_size);
+    memcpy(out+l*object_size, target, object_size*v);
+    return out;
+}
+size_t array_length(void * array){
+    ArrayHeader_t * head = GetHeader(array);
+    return head->length;
+}
+size_t array_capacity(void * array){
+    ArrayHeader_t * head = GetHeader(array);
+    return head->capacity;
+}
+void * array_resize(void * array, size_t new_size, size_t obj_size){
+    ArrayHeader_t * head = GetHeader(array);
+    if(head->capacity/2< new_size && head->capacity>=new_size){
+        head->length = new_size;
+        return array;
+    }
+    ArrayHeader_t old = *head;
+    size_t sz = to_pow_2(new_size);
+    void * out = arena_realloc(old.arena, head,old.capacity,sz*obj_size+sizeof(ArrayHeader_t));
+    head =out;
+    head->capacity = sz;
+    head->length = new_size;
+    return out+sizeof(ArrayHeader_t);
+}
+void * array_remove(void * array, size_t idx, size_t obj_size){
+    if(len(array) == 1){
+        arena_free(GetHeader(array)->arena,array);
+        return NULL;
+    }
+    size_t l = len(array);
+    void * out = array_resize(array, len(array)-1, obj_size);
+    void * start = out+idx*obj_size;
+    void * end = out+(idx+1)*obj_size;
+    size_t size = (l-idx-1)*obj_size;
+    memmove(start, end, size);
+    return out;
+}
+void *array_clone(void * array,Arena * new_arena){
+    size_t sz = GetHeader(array)->capacity+sizeof(ArrayHeader_t);
+    void * block = arena_alloc(new_arena, sz);
+    char * tmp = block;
+    char * old = (void *)GetHeader(array);
+    for(int i =0; i<sz; i++){
+        tmp[i] = old[i];
+    }
+    return block;
+}
+void * new_array_deletable(size_t object_size, size_t capacity, Arena * arena){
+    size_t space = to_pow_2(capacity);
+    void * tmp = arena_alloc_freeable(arena, sizeof(ArrayHeader_t)+object_size*space);
+    ArrayHeader_t * head = tmp;
+    head->length = 0;
+    head->capacity = space;
+    head->arena = arena;
+    void * out = tmp+sizeof(ArrayHeader_t);
+    return out;
+}
 /*
 String Stuff
 */
 
 String new_string(Arena * arena, const char* str){
-	String out = make(str_type, arena);
 	int l = strlen(str);
+    String out = make(str_type,l,arena);
 	for(int i = 0; i<l; i++){
 		append(out, (str_type)str[i]);
 	}
@@ -515,8 +590,8 @@ String new_string(Arena * arena, const char* str){
 	return out;
 }
 String new_string_wide(Arena * arena, const wchar_t* str){
-	String out = make(str_type, arena);
-	int l = wcslen(str);
+    int l = wcslen(str);
+	String out = make(str_type, l, arena);
 	for(int i = 0; i<l; i++){
 		append(out, (str_type)str[i]);
 	}
@@ -525,18 +600,17 @@ String new_string_wide(Arena * arena, const wchar_t* str){
 }
 void _strconcat(String * a, const char* b, size_t b_size){
 	if(b_size <4){
+        int l = len(*a)-1;
 		resize((*a), len((*a))+strlen(b));
 		for(int i=0; i<strlen(b); i++){
-			a->arr[a->len-1] = (str_type)(b[i]);
-			a->len++;
+			(*a)[l+i] = (str_type)(b[i]);
 		}
 	}
 	else {
 		resize((*a), len((*a))+wcslen((const wchar_t *)b));
 		const wchar_t * v = (const wchar_t *)b;
 		for(int i=0; i<wcslen(v); i++){
-			a->arr[a->len-1] = (str_type)(v[i]);
-			a->len++;
+			(*a)[len(a)-1] = (str_type)(v[i]);
 		}
 	}
 }
@@ -547,10 +621,7 @@ String string_format(Arena *arena, const char * fmt, ...){
 	int l = strlen(fmt);
 	for(int i = 0; i<l; i++){
 		if(fmt[i] != '%'){
-			if(s.len<1){
-				s.arr[len(s)] = fmt[i];
-				s.len++;
-			} else{
+            {
 				str_append(s, fmt[i]);
 			}
 			append(s, '\0');
@@ -616,7 +687,7 @@ bool StringEquals(String a, String b){
 		return 0;
 	}
 	for(int i= 0; i<len(a); i++){
-		if(a.arr[i] != b.arr[i]){
+		if(a[i] != b[i]){
 			return 0;
 		}
 	}
@@ -624,86 +695,19 @@ bool StringEquals(String a, String b){
 }
 String RandomString(Arena * arena,int minlen, int maxlen){
 	int length = rand()%(maxlen-minlen)+minlen;
-	String out = make_cap(str_type, length+1, arena);
+	String out = make(str_type, length+1, arena);
 	for(int i= 0; i<length+1; i++){
-		array(out)[i] = 0;
+		out[i] = 0;
 	}
-	out.len = length+1;
+    resize(out, length+3);
 	for(int i =0; i<length; i++){
 		char c = rand()%(90-65)+65;
 		if(rand()%2){
 			c += 32;
 		}
-		out.arr[i] = c;
+		out[i] = c;
 	}
-	out.arr[length+1] = 0;
+	out[length+1] = 0;
 	return out;
 }
-/*
-Hashing
-*/
-
-size_t HashBytes(Byte * bytes, size_t size){
-	size_t out = 0;
-	const size_t pmlt = 31;
-	size_t mlt = 31;
-	for(int i =0; i<size;i++){
-		out += bytes[i]*mlt;
-		mlt*=pmlt;
-	}
-	return out;
-}
-size_t HashInt(int in){
-	int tmp = in;
-	return HashBytes((void *)&tmp, sizeof(tmp));
-}
-size_t HashFloat(float fl){
-	float tmp = fl;
-	return HashBytes((void *)&tmp, sizeof(tmp));
-}
-size_t HashLong(long lg){
-	long tmp = lg;
-	return HashBytes((void *)&tmp, sizeof(tmp));
-}
-size_t HashDouble(double db){
-	double tmp = db;
-	return HashBytes((void *)&tmp, sizeof(tmp));
-}
-size_t HashString(String str){
-	size_t out = 0;
-	const size_t pmlt = 31;
-	size_t mlt = 1;
-	for(int i =0; i<str.len;i++){
-		out += str.arr[i]*mlt;
-		mlt*=pmlt;
-	}
-	return out;
-}
-/*
-Utils
-*/
-long get_time_microseconds(){
-	struct timeval tv;
-	gettimeofday(&tv,NULL);
-	return tv.tv_usec+tv.tv_sec*1000000;
-}
-static long profile_time = 0;
-void begin_profile(){
-	if(profile_time == 0){
-		profile_time = get_time_microseconds();
-	}
-}
-long end_profile(){
-	if(profile_time != 0){
-		long out =  get_time_microseconds()-profile_time;
-		profile_time = 0;
-		return out;
-	}
-	return -1;
-}
-void end_profile_print(const char * message){
-	printf("%s took %f seconds\n",message, ((double)end_profile())/1000000);
-}
-
 #endif
-
