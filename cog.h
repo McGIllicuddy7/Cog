@@ -358,7 +358,6 @@ void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requ
 		}
 	}
 	char * nptr =(char *)arena_alloc(arena, requested_size);
-	assert(nptr != nil);
 	for(int i =0; i<initial_size; i++){
 		nptr[i] = ((char *)ptr)[i];
 	}
@@ -555,7 +554,7 @@ void * array_resize(void * array, size_t new_size, size_t obj_size){
     }
     ArrayHeader_t old = *head;
     size_t sz = to_pow_2(new_size);
-    void * out = arena_realloc(old.arena, head,old.capacity+sizeof(ArrayHeader_t),sz*obj_size+sizeof(ArrayHeader_t));
+    void * out = arena_realloc(old.arena, head,old.capacity*obj_size+sizeof(ArrayHeader_t),sz*obj_size+sizeof(ArrayHeader_t));
 	assert(out != NULL);
     head =out;
     head->capacity = sz;

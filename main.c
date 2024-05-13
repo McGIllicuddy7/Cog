@@ -4,8 +4,8 @@
 #include "cog.h"
 enable_hash_type(String, int);
 void test1(){
-    const int mx = 10;
-    const int lx =10;
+    const int mx = 33;
+    const int lx =33;
     long tm = get_time_microseconds();
     srand(time(0));
     Arena * local = init_arena();
@@ -14,12 +14,6 @@ void test1(){
         String s = RandomString(local, 32,33);
         assert(s>(int*)64);
         append(strs, s);
-        printf("%p,", strs[i]) ;
-        printf("\nchecking\n");
-        for(int j =0; j<len(strs); j++){
-            printf("%p,", strs[j]);
-        }
-        printf("\nnext\n");
     }
     StringintHashTable* table = StringintHashTable_create(local, lx, HashString, StringEquals);
     printf("%zu\n", len(strs));
