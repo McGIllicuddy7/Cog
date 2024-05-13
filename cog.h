@@ -108,8 +108,8 @@ String RandomString(Arena * arena, int minlen, int maxlen);
 
 #define str_append(a,b)\
 	resize(a, len(a)+1);\
-	a[len(a)-1] = b
-
+	a[len(a)-2] = b;\
+	a[len(a)-1] = '\0'\
 /*
 HashFunctions
 */
@@ -619,18 +619,34 @@ String new_string_wide(Arena * arena, const wchar_t* str){
 	return out;
 }
 void _strconcat(String * a, const char* b, size_t b_size){
-	if(b_size <4){
+	if(sizeof(str_type) == 1){
         int l = len(*a)-1;
 		resize((*a), len((*a))+strlen(b));
+		int l2 = strlen(b);
 		for(int i=0; i<strlen(b); i++){
 			(*a)[l+i] = (str_type)(b[i]);
 		}
+		(*a)[l+l2] = '\0';
 	}
-	else {
-		resize((*a), len((*a))+wcslen((const wchar_t *)b));
-		const wchar_t * v = (const wchar_t *)b;
-		for(int i=0; i<wcslen(v); i++){
-			(*a)[len(a)-1] = (str_type)(v[i]);
+	else{
+		if(b_size <4){
+			int l = len(*a)-1;
+			resize((*a), len((*a))+strlen(b));
+			int l2 = strlen(b);
+			for(int i=0; i<strlen(b); i++){
+				(*a)[l+i] = (str_type)(b[i]);
+			}
+			(*a)[l+l2] = '\0';
+		}
+		else {
+			int l = len(*a)-1;
+			resize((*a), len((*a))+wcslen((const wchar_t *)b));
+			const wchar_t * v = (const wchar_t *)b;
+			int l2 = wcslen(v);
+			for(int i=0; i<l2; i++){
+				(*a)[l+i] = (str_type)(v[i]);
+			}
+			(*a)[l+l2] = '\0';
 		}
 	}
 }
@@ -641,10 +657,7 @@ String string_format(Arena *arena, const char * fmt, ...){
 	int l = strlen(fmt);
 	for(int i = 0; i<l; i++){
 		if(fmt[i] != '%'){
-            {
-				str_append(s, fmt[i]);
-			}
-			append(s, '\0');
+			str_append(s, fmt[i]);
 		}
 		else{
 			if(fmt[i+1] == 'c'){
