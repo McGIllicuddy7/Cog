@@ -1,2 +1,2 @@
 make: main.c
-	clang main.c -Og -ggdb3 -fsanitize=address
+	clang main.c -ggdb3

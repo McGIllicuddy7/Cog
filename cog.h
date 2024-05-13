@@ -137,14 +137,16 @@ typedef struct{\
 	Arena * arena;\
 }T##U##HashTable;\
 static T##U##HashTable * T##U##HashTable_create(Arena * arena, size_t size,size_t (*hash_func)(T),bool (*eq_func)(T,T)){\
-	T##U##HashTable out = (T##U##HashTable){.Table = arena_alloc_freeable(arena, sizeof(T##U##KeyValuePair arr)*size), .TableSize = size, .hash_func = hash_func, .eq_func = eq_func, .arena = arena};\
+	T##U##HashTable * out = arena_alloc_freeable(arena, sizeof(T##U##HashTable));\
+	out->Table= arena_alloc_freeable(arena, sizeof(T##U##KeyValuePair arr)*size);\
+	out->TableSize = size;\
+	out->hash_func = hash_func;\
+	out->eq_func = eq_func;\
+	out->arena = arena;\
 	for(int i =0; i<size; i++){\
-		out.Table[i] = make_destroyable(T##U##KeyValuePair,16,arena);\
-		resize(out.Table[i],16);\
+		out->Table[i] = make_destroyable(T##U##KeyValuePair,16,arena);\
 	}\
-	T##U##HashTable * outv = arena_alloc_freeable(arena, sizeof(T##U##HashTable));\
-	*outv = out;\
-	return outv;\
+	return out;\
 }\
 static void T##U##HashTable_resize(T##U##HashTable * table, size_t new_size){\
 	T##U##KeyValuePair arr * new_table = arena_alloc_freeable(table->arena, new_size);\
@@ -277,9 +279,12 @@ Arena * sized_init_arena(size_t sz){
 	out->next = nil;
 	return out;
 }
+size_t alc_count = 0;
+size_t freed_count = 0;
 void free_arena(Arena * in_arena){
 	Arena * arena = in_arena;
 	int i =0;
+	int idx =0;
 	while(arena){
 		global_free(arena->buffer);
 		arena->ptr = nil;
@@ -296,11 +301,13 @@ void free_arena(Arena * in_arena){
 				FreeableAllocation * tmp = list;
 				list = next;
 				global_free(tmp);
+				idx ++;
 			}
 		Arena * old = arena;
 		arena = arena->next;
 		global_free(old);
 	}
+	printf("freed alcs:%lu, alcs:%zu\n", idx+freed_count, alc_count);
 }
 void * arena_alloc(Arena * arena, size_t amnt){
 	if(amnt<1){
@@ -359,7 +366,11 @@ void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requ
 }
 void * arena_alloc_freeable(Arena * arena, size_t amnt){
 	void * ptr = global_alloc(1, amnt);
+	if(arena == 0){
+		return ptr;
+	}
 	FreeableAllocation * alc = global_alloc(1, sizeof(FreeableAllocation));
+	alc_count += 1;
 	alc->allocation = ptr;
 	FreeableAllocation * tmp = arena->freeable_list;
 	alc->next = tmp;
@@ -373,20 +384,30 @@ void * arena_alloc_freeable(Arena * arena, size_t amnt){
 void arena_free(Arena * arena, void * ptr){
 	if(arena == nil){
 		global_free(ptr);
+		return;
 	}
 	FreeableAllocation* allc = findAllocation(arena, ptr);
 	if(!allc){
 		return;
 	}
-	if(allc->prev){
-		((FreeableAllocation*)allc->prev)->next = allc->next;
-	}
-	if(allc->next){
-		((FreeableAllocation*)allc->next)->prev = allc->prev;
-	}
 	if(allc == arena->freeable_list){
-		arena->freeable_list = nil;
+		if(allc->next){
+			arena->freeable_list = allc->next;
+			((FreeableAllocation*)allc->next)->prev = 0;
+		} else{
+			arena->freeable_list = 0;
+		}
 	}
+	else{
+		if(allc->prev){
+			((FreeableAllocation*)allc->prev)->next = allc->next;
+		}
+		if(allc->next){
+			((FreeableAllocation*)allc->next)->prev = allc->prev;
+		}
+	}
+
+	freed_count++;
 	global_free(allc->allocation);
 	global_free(allc);
 }

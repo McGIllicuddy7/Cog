@@ -3,7 +3,7 @@
 #define COG_IMPLEMENTATION
 #include "cog.h"
 enable_hash_type(String, int);
-void test()1{
+void test1(){
     const int mx = 30;
     const int lx =30;
     long tm = get_time_microseconds();
@@ -49,22 +49,18 @@ void test2(){
     free_arena(local);
 }
 void test3(){
-    const int mx = 10;
+    const int mx = 2;
     const int lx =10;
     long tm = get_time_microseconds();
     srand(time(0));
     Arena * local = init_arena();
-    String arr strs = make_destroyable(String, 32, local);
+    String arr strs = make_destroyable(String, 32, 0);
     for(int i = 0; i<mx; i++){
         printf("%d\n",i);
         String s = RandomString(local, 64,128);
         append(strs, s);
     }
-    StringintHashTable *table = StringintHashTable_create(local, lx, HashString, StringEquals);
-    printf("generation finished\n");
-    printf("success\n");
-    printf("took %f seconds\n",(double)(get_time_microseconds()-tm)/1000000);
-    tm = get_time_microseconds();
+    StringintHashTable *table = StringintHashTable_create(0, lx, HashString, StringEquals);
     StringintHashTable_destroy(table);
     destroy(strs);
     free_arena(local);
@@ -80,10 +76,44 @@ void test4(){
     }
     free_arena(local);
 }
+void test5(){
+    Arena * local = init_arena();
+    const int l = 10;
+    int arr ints[10] = {0};
+    for(int i = 0; i<l; i++){
+        ints[i] = make_destroyable(int, 32, local);
+    }
+    for(int i =0; i<1000; i++){
+        for(int j =0; j<l; j++){
+            append(ints[j], i);
+        }
+    }
+    for(int i =0; i<l ; i++){
+        destroy(ints[i]);
+    }
+    free_arena(local);
+}
+void test6(){
+    Arena * local = init_arena();
+    const int l = 10;
+    String arr ints[10] = {0};
+    for(int i = 0; i<l; i++){
+        ints[i] = make_destroyable(String, 2, local);
+    }
+    for(int i =0; i<1000; i++){
+        for(int j =0; j<l; j++){
+            append(ints[j], string_format(local, "%d",i));
+        }
+    }
+    for(int i =0; i<l ; i++){
+        destroy(ints[i]);
+    }
+    free_arena(local);
+}
 int main(){
+    //test1();
+    //test2();
+    //test3();
     test1();
-    test2();
-    test3();
-    test4();
     debug_alloc_and_free_counts();
 }
