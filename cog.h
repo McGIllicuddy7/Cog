@@ -136,18 +136,20 @@ typedef struct{\
 	bool (*eq_func)(T,T);\
 	Arena * arena;\
 }T##U##HashTable;\
-static T##U##HashTable T##U##HashTable_create(Arena * arena, size_t size,size_t (*hash_func)(T),bool (*eq_func)(T,T)){\
+static T##U##HashTable * T##U##HashTable_create(Arena * arena, size_t size,size_t (*hash_func)(T),bool (*eq_func)(T,T)){\
 	T##U##HashTable out = (T##U##HashTable){.Table = arena_alloc_freeable(arena, sizeof(T##U##KeyValuePair arr)*size), .TableSize = size, .hash_func = hash_func, .eq_func = eq_func, .arena = arena};\
 	for(int i =0; i<size; i++){\
 		out.Table[i] = make_destroyable(T##U##KeyValuePair,16,arena);\
 		resize(out.Table[i],16);\
 	}\
-	return out;\
+	T##U##HashTable * outv = arena_alloc_freeable(arena, sizeof(T##U##HashTable));\
+	*outv = out;\
+	return outv;\
 }\
 static void T##U##HashTable_resize(T##U##HashTable * table, size_t new_size){\
-	T##U##KeyValuePair arr * new_table = arena_alloc(table->arena, new_size);\
+	T##U##KeyValuePair arr * new_table = arena_alloc_freeable(table->arena, new_size);\
 	for(int i =0; i<new_size; i++){\
-		new_table[i] = make(T##U##KeyValuePair,8, table->arena);\
+		new_table[i] = make_destroyable(T##U##KeyValuePair,8, table->arena);\
 	}\
 	for(int i =0; i<table->TableSize; i++){\
 		for(int j = 0; j<len(table->Table[i]); j++){\
@@ -202,6 +204,7 @@ static void T##U##HashTable_destroy(T##U##HashTable * table){\
 		destroy(table->Table[i]);\
 	}\
 	arena_free(table->arena, table->Table);\
+	arena_free(table->arena,table);\
 }
 /*
 Utils
@@ -531,7 +534,7 @@ void * array_resize(void * array, size_t new_size, size_t obj_size){
     }
     ArrayHeader_t old = *head;
     size_t sz = to_pow_2(new_size);
-    void * out = arena_realloc(old.arena, head,old.capacity,sz*obj_size+sizeof(ArrayHeader_t));
+    void * out = arena_realloc(old.arena, head,old.capacity+sizeof(ArrayHeader_t),sz*obj_size+sizeof(ArrayHeader_t));
     head =out;
     head->capacity = sz;
     head->length = new_size;
