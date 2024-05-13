@@ -279,12 +279,9 @@ Arena * sized_init_arena(size_t sz){
 	out->next = nil;
 	return out;
 }
-size_t alc_count = 0;
-size_t freed_count = 0;
 void free_arena(Arena * in_arena){
 	Arena * arena = in_arena;
 	int i =0;
-	int idx =0;
 	while(arena){
 		global_free(arena->buffer);
 		arena->ptr = nil;
@@ -301,16 +298,15 @@ void free_arena(Arena * in_arena){
 				FreeableAllocation * tmp = list;
 				list = next;
 				global_free(tmp);
-				idx ++;
 			}
 		Arena * old = arena;
 		arena = arena->next;
 		global_free(old);
 	}
-	printf("freed alcs:%lu, alcs:%zu\n", idx+freed_count, alc_count);
 }
 void * arena_alloc(Arena * arena, size_t amnt){
 	if(amnt<1){
+		assert(0);
 		return nil;
 	}
 	if(arena == nil){
@@ -322,6 +318,7 @@ void * arena_alloc(Arena * arena, size_t amnt){
 				arena->next = sized_init_arena(amnt);
 			} else{
 				arena->next = sized_init_arena((arena->end-arena->buffer)*2);
+				assert(arena->next != nil);
 			}
 		}
 		return arena_alloc((Arena *)arena->next,amnt);
@@ -333,6 +330,7 @@ void * arena_alloc(Arena * arena, size_t amnt){
 	arena->last_allocation = arena->ptr;
 	void * out = arena->ptr;
 	arena->ptr = (void *)((size_t)arena->ptr+size);
+	assert(out != nil);
 	return out;
 }
 void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requested_size){
@@ -347,6 +345,7 @@ void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requ
 			alc->allocation = ptrl;
 			return ptrl;
 		}
+		assert(0);
 		return nil;
 	}
 	if(ptr == arena->last_allocation){
@@ -359,6 +358,7 @@ void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requ
 		}
 	}
 	char * nptr =(char *)arena_alloc(arena, requested_size);
+	assert(nptr != nil);
 	for(int i =0; i<initial_size; i++){
 		nptr[i] = ((char *)ptr)[i];
 	}
@@ -370,7 +370,6 @@ void * arena_alloc_freeable(Arena * arena, size_t amnt){
 		return ptr;
 	}
 	FreeableAllocation * alc = global_alloc(1, sizeof(FreeableAllocation));
-	alc_count += 1;
 	alc->allocation = ptr;
 	FreeableAllocation * tmp = arena->freeable_list;
 	alc->next = tmp;
@@ -379,6 +378,7 @@ void * arena_alloc_freeable(Arena * arena, size_t amnt){
 	if(tmp){
 		tmp->prev = alc;
 	}
+	assert(ptr != nil);
 	return ptr;
 }
 void arena_free(Arena * arena, void * ptr){
@@ -406,8 +406,6 @@ void arena_free(Arena * arena, void * ptr){
 			((FreeableAllocation*)allc->next)->prev = allc->prev;
 		}
 	}
-
-	freed_count++;
 	global_free(allc->allocation);
 	global_free(allc);
 }
@@ -521,6 +519,7 @@ void * new_array(size_t object_size, size_t capacity, Arena * arena){
     head->length = 0;
     head->capacity = space;
     head->arena = arena;
+	assert(tmp != NULL);
     void * out = tmp+sizeof(ArrayHeader_t);
     return out;
 }
@@ -536,7 +535,8 @@ void * array_concat(void * array, void * target, size_t object_size, size_t addr
     ArrayHeader_t * target_head = GetHeader(target);
     int v = target_head->length;
     void * out= array_resize(array, array_head->length+v,object_size);
-    memcpy(out+l*object_size, target, object_size*v);
+    assert(out != NULL);
+	memcpy(out+l*object_size, target, object_size*v);
     return out;
 }
 size_t array_length(void * array){
@@ -549,13 +549,14 @@ size_t array_capacity(void * array){
 }
 void * array_resize(void * array, size_t new_size, size_t obj_size){
     ArrayHeader_t * head = GetHeader(array);
-    if(head->capacity/2< new_size && head->capacity>=new_size){
+    if(head->capacity>=new_size){
         head->length = new_size;
         return array;
     }
     ArrayHeader_t old = *head;
     size_t sz = to_pow_2(new_size);
     void * out = arena_realloc(old.arena, head,old.capacity+sizeof(ArrayHeader_t),sz*obj_size+sizeof(ArrayHeader_t));
+	assert(out != NULL);
     head =out;
     head->capacity = sz;
     head->length = new_size;
@@ -577,6 +578,7 @@ void * array_remove(void * array, size_t idx, size_t obj_size){
 void *array_clone(void * array,Arena * new_arena){
     size_t sz = GetHeader(array)->capacity+sizeof(ArrayHeader_t);
     void * block = arena_alloc(new_arena, sz);
+	assert(block != nil);
     char * tmp = block;
     char * old = (void *)GetHeader(array);
     for(int i =0; i<sz; i++){
@@ -587,6 +589,7 @@ void *array_clone(void * array,Arena * new_arena){
 void * new_array_deletable(size_t object_size, size_t capacity, Arena * arena){
     size_t space = to_pow_2(capacity);
     void * tmp = arena_alloc_freeable(arena, sizeof(ArrayHeader_t)+object_size*space);
+	assert(tmp != nil);
     ArrayHeader_t * head = tmp;
     head->length = 0;
     head->capacity = space;

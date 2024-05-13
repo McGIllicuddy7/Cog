@@ -4,19 +4,27 @@
 #include "cog.h"
 enable_hash_type(String, int);
 void test1(){
-    const int mx = 30;
-    const int lx =30;
+    const int mx = 10;
+    const int lx =10;
     long tm = get_time_microseconds();
     srand(time(0));
     Arena * local = init_arena();
-    String arr strs = make_destroyable(String, 32, local);
+    String arr strs = make(String, 32, local);
     for(int i = 0; i<mx; i++){
-        String s = RandomString(local, 64,128);
+        String s = RandomString(local, 32,33);
+        assert(s>(int*)64);
         append(strs, s);
+        printf("%p,", strs[i]) ;
+        printf("\nchecking\n");
+        for(int j =0; j<len(strs); j++){
+            printf("%p,", strs[j]);
+        }
+        printf("\nnext\n");
     }
     StringintHashTable* table = StringintHashTable_create(local, lx, HashString, StringEquals);
-    printf("generation finished\n");
+    printf("%zu\n", len(strs));
     for(int i =0; i<len(strs); i++){
+        assert(strs[i]>(int*)64);
         StringintHashTable_insert(table, strs[i], i);
     }
     for(int i =0; i<len(strs); i++){
@@ -111,9 +119,11 @@ void test6(){
     free_arena(local);
 }
 int main(){
-    //test1();
-    //test2();
-    //test3();
     test1();
+   // test2();
+   // test3();
+   // test4();
+   // test5();
+   // test6();
     debug_alloc_and_free_counts();
 }
