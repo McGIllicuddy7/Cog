@@ -108,8 +108,8 @@ String RandomString(Arena * arena, int minlen, int maxlen);
 
 #define str_append(a,b)\
 	resize(a, len(a)+1);\
-	a[len(a)-1] = b
-
+	a[len(a)-2] = b;\
+	a[len(a)-1] = '\0'\
 /*
 HashFunctions
 */
@@ -137,14 +137,16 @@ typedef struct{\
 	Arena * arena;\
 }T##U##HashTable;\
 static T##U##HashTable * T##U##HashTable_create(Arena * arena, size_t size,size_t (*hash_func)(T),bool (*eq_func)(T,T)){\
-	T##U##HashTable out = (T##U##HashTable){.Table = arena_alloc_freeable(arena, sizeof(T##U##KeyValuePair arr)*size), .TableSize = size, .hash_func = hash_func, .eq_func = eq_func, .arena = arena};\
+	T##U##HashTable * out = arena_alloc_freeable(arena, sizeof(T##U##HashTable));\
+	out->Table= arena_alloc_freeable(arena, sizeof(T##U##KeyValuePair arr)*size);\
+	out->TableSize = size;\
+	out->hash_func = hash_func;\
+	out->eq_func = eq_func;\
+	out->arena = arena;\
 	for(int i =0; i<size; i++){\
-		out.Table[i] = make_destroyable(T##U##KeyValuePair,16,arena);\
-		resize(out.Table[i],16);\
+		out->Table[i] = make_destroyable(T##U##KeyValuePair,16,arena);\
 	}\
-	T##U##HashTable * outv = arena_alloc_freeable(arena, sizeof(T##U##HashTable));\
-	*outv = out;\
-	return outv;\
+	return out;\
 }\
 static void T##U##HashTable_resize(T##U##HashTable * table, size_t new_size){\
 	T##U##KeyValuePair arr * new_table = arena_alloc_freeable(table->arena, new_size);\
@@ -300,6 +302,7 @@ void free_arena(Arena * in_arena){
 }
 void * arena_alloc(Arena * arena, size_t amnt){
 	if(amnt<1){
+		assert(0);
 		return nil;
 	}
 	if(arena == nil){
@@ -311,6 +314,7 @@ void * arena_alloc(Arena * arena, size_t amnt){
 				arena->next = sized_init_arena(amnt);
 			} else{
 				arena->next = sized_init_arena((arena->end-arena->buffer)*2);
+				assert(arena->next != nil);
 			}
 		}
 		return arena_alloc((Arena *)arena->next,amnt);
@@ -322,6 +326,7 @@ void * arena_alloc(Arena * arena, size_t amnt){
 	arena->last_allocation = arena->ptr;
 	void * out = arena->ptr;
 	arena->ptr = (void *)((size_t)arena->ptr+size);
+	assert(out != nil);
 	return out;
 }
 void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requested_size){
@@ -336,6 +341,7 @@ void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requ
 			alc->allocation = ptrl;
 			return ptrl;
 		}
+		assert(0);
 		return nil;
 	}
 	if(ptr == arena->last_allocation){
@@ -355,6 +361,9 @@ void * arena_realloc(Arena * arena, void * ptr, size_t initial_size, size_t requ
 }
 void * arena_alloc_freeable(Arena * arena, size_t amnt){
 	void * ptr = global_alloc(1, amnt);
+	if(arena == 0){
+		return ptr;
+	}
 	FreeableAllocation * alc = global_alloc(1, sizeof(FreeableAllocation));
 	alc->allocation = ptr;
 	FreeableAllocation * tmp = arena->freeable_list;
@@ -364,24 +373,33 @@ void * arena_alloc_freeable(Arena * arena, size_t amnt){
 	if(tmp){
 		tmp->prev = alc;
 	}
+	assert(ptr != nil);
 	return ptr;
 }
 void arena_free(Arena * arena, void * ptr){
 	if(arena == nil){
 		global_free(ptr);
+		return;
 	}
 	FreeableAllocation* allc = findAllocation(arena, ptr);
 	if(!allc){
 		return;
 	}
-	if(allc->prev){
-		((FreeableAllocation*)allc->prev)->next = allc->next;
-	}
-	if(allc->next){
-		((FreeableAllocation*)allc->next)->prev = allc->prev;
-	}
 	if(allc == arena->freeable_list){
-		arena->freeable_list = nil;
+		if(allc->next){
+			arena->freeable_list = allc->next;
+			((FreeableAllocation*)allc->next)->prev = 0;
+		} else{
+			arena->freeable_list = 0;
+		}
+	}
+	else{
+		if(allc->prev){
+			((FreeableAllocation*)allc->prev)->next = allc->next;
+		}
+		if(allc->next){
+			((FreeableAllocation*)allc->next)->prev = allc->prev;
+		}
 	}
 	global_free(allc->allocation);
 	global_free(allc);
@@ -496,6 +514,7 @@ void * new_array(size_t object_size, size_t capacity, Arena * arena){
     head->length = 0;
     head->capacity = space;
     head->arena = arena;
+	assert(tmp != NULL);
     void * out = tmp+sizeof(ArrayHeader_t);
     return out;
 }
@@ -511,7 +530,8 @@ void * array_concat(void * array, void * target, size_t object_size, size_t addr
     ArrayHeader_t * target_head = GetHeader(target);
     int v = target_head->length;
     void * out= array_resize(array, array_head->length+v,object_size);
-    memcpy(out+l*object_size, target, object_size*v);
+    assert(out != NULL);
+	memcpy(out+l*object_size, target, object_size*v);
     return out;
 }
 size_t array_length(void * array){
@@ -524,13 +544,14 @@ size_t array_capacity(void * array){
 }
 void * array_resize(void * array, size_t new_size, size_t obj_size){
     ArrayHeader_t * head = GetHeader(array);
-    if(head->capacity/2< new_size && head->capacity>=new_size){
+    if(head->capacity>=new_size){
         head->length = new_size;
         return array;
     }
     ArrayHeader_t old = *head;
     size_t sz = to_pow_2(new_size);
-    void * out = arena_realloc(old.arena, head,old.capacity+sizeof(ArrayHeader_t),sz*obj_size+sizeof(ArrayHeader_t));
+    void * out = arena_realloc(old.arena, head,old.capacity*obj_size+sizeof(ArrayHeader_t),sz*obj_size+sizeof(ArrayHeader_t));
+	assert(out != NULL);
     head =out;
     head->capacity = sz;
     head->length = new_size;
@@ -552,6 +573,7 @@ void * array_remove(void * array, size_t idx, size_t obj_size){
 void *array_clone(void * array,Arena * new_arena){
     size_t sz = GetHeader(array)->capacity+sizeof(ArrayHeader_t);
     void * block = arena_alloc(new_arena, sz);
+	assert(block != nil);
     char * tmp = block;
     char * old = (void *)GetHeader(array);
     for(int i =0; i<sz; i++){
@@ -562,6 +584,7 @@ void *array_clone(void * array,Arena * new_arena){
 void * new_array_deletable(size_t object_size, size_t capacity, Arena * arena){
     size_t space = to_pow_2(capacity);
     void * tmp = arena_alloc_freeable(arena, sizeof(ArrayHeader_t)+object_size*space);
+	assert(tmp != nil);
     ArrayHeader_t * head = tmp;
     head->length = 0;
     head->capacity = space;
@@ -592,18 +615,34 @@ String new_string_wide(Arena * arena, const wchar_t* str){
 	return out;
 }
 void _strconcat(String * a, const char* b, size_t b_size){
-	if(b_size <4){
+	if(sizeof(str_type) == 1){
         int l = len(*a)-1;
 		resize((*a), len((*a))+strlen(b));
+		int l2 = strlen(b);
 		for(int i=0; i<strlen(b); i++){
 			(*a)[l+i] = (str_type)(b[i]);
 		}
+		(*a)[l+l2] = '\0';
 	}
-	else {
-		resize((*a), len((*a))+wcslen((const wchar_t *)b));
-		const wchar_t * v = (const wchar_t *)b;
-		for(int i=0; i<wcslen(v); i++){
-			(*a)[len(a)-1] = (str_type)(v[i]);
+	else{
+		if(b_size <4){
+			int l = len(*a)-1;
+			resize((*a), len((*a))+strlen(b));
+			int l2 = strlen(b);
+			for(int i=0; i<strlen(b); i++){
+				(*a)[l+i] = (str_type)(b[i]);
+			}
+			(*a)[l+l2] = '\0';
+		}
+		else {
+			int l = len(*a)-1;
+			resize((*a), len((*a))+wcslen((const wchar_t *)b));
+			const wchar_t * v = (const wchar_t *)b;
+			int l2 = wcslen(v);
+			for(int i=0; i<l2; i++){
+				(*a)[l+i] = (str_type)(v[i]);
+			}
+			(*a)[l+l2] = '\0';
 		}
 	}
 }
@@ -614,10 +653,7 @@ String string_format(Arena *arena, const char * fmt, ...){
 	int l = strlen(fmt);
 	for(int i = 0; i<l; i++){
 		if(fmt[i] != '%'){
-            {
-				str_append(s, fmt[i]);
-			}
-			append(s, '\0');
+			str_append(s, fmt[i]);
 		}
 		else{
 			if(fmt[i+1] == 'c'){
