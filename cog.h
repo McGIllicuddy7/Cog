@@ -287,15 +287,11 @@ void free_arena(Arena * in_arena){
 		arena->last_allocation = nil;
 		arena->buffer = nil;
 			FreeableAllocation * list = arena->freeable_list;
-			void * previous = nil;
 			while(list){
-				assert(previous == list->prev);
-				previous = list;
-				FreeableAllocation * next = list->next;
-				global_free(list->allocation);
-				FreeableAllocation * tmp = list;
-				list = next;
-				global_free(tmp);
+				FreeableAllocation * prev = list;
+				list = list->next;
+				global_free(prev->allocation);
+				global_free(prev);
 			}
 		Arena * old = arena;
 		arena = arena->next;

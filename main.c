@@ -2,9 +2,10 @@
 #include <unistd.h>
 #define COG_IMPLEMENTATION
 #include "cog.h"
+#include <time.h>
 enable_hash_type(String, int);
-void test()1{
-    const int mx = 30;
+void test1(){
+    const int mx = 1;
     const int lx =30;
     long tm = get_time_microseconds();
     srand(time(0));
@@ -49,7 +50,7 @@ void test2(){
     free_arena(local);
 }
 void test3(){
-    const int mx = 10;
+    const int mx = 1;
     const int lx =10;
     long tm = get_time_microseconds();
     srand(time(0));
@@ -65,7 +66,7 @@ void test3(){
     printf("success\n");
     printf("took %f seconds\n",(double)(get_time_microseconds()-tm)/1000000);
     tm = get_time_microseconds();
-    StringintHashTable_destroy(table);
+   // StringintHashTable_destroy(table);
     destroy(strs);
     free_arena(local);
     printf("freeing arena took %f seconds\n",(double)(get_time_microseconds()-tm)/1000000);
@@ -80,10 +81,13 @@ void test4(){
     }
     free_arena(local);
 }
+void test5(){
+    int arr ints [10] = {};
+}
 int main(){
-    test1();
-    test2();
-    test3();
-    test4();
+    //test1();
+    //test2();
+    //test3();
+    //test4();
     debug_alloc_and_free_counts();
 }
